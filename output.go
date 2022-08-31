@@ -198,3 +198,46 @@ func (l *screenLine) asPlain() string {
 	}
 	return line
 }
+
+func (b *outputBuffer) appendANSIStyle(styles []string) {
+	if len(styles) > 0 {
+		b.Write([]byte("\u001b["))
+		b.Write([]byte(styles[0]))
+		for _, code := range styles[1:] {
+			// only write semicolons after we write the first ANSI code
+			b.Write([]byte(";"))
+			b.Write([]byte(code))
+		}
+		b.Write([]byte("m"))
+	}
+}
+
+func outputLineAsANSI(line []node, previous style) (string, style) {
+	nodes := line
+	for _, n := range slices.Backward(line) {
+		if n.style.bgColorType() != colorNone || (n.blob != ' ' && n.blob != '\t') {
+			break
+		}
+		// trim the trailing whitespace first, since we don't want to render what
+		// we don't need to and this would be harder after rendering anyway.
+		nodes = nodes[:len(nodes)-1]
+	}
+	var lineBuf outputBuffer
+	for _, n := range nodes {
+		s := n.style
+		if n.blob == ' ' || n.blob == '\t' {
+			// if this is whitespace, the only style that can have an effect is
+			// background color.
+			s = (previous &^ (sbBGColorX | sbBGColor)) | (s & (sbBGColorX | sbBGColor))
+		}
+		styles := s.ANSITransform(previous)
+		fromZero := append([]string{""}, s.ANSITransform(style(0))...)
+		if len(strings.Join(fromZero, ";")) < len(strings.Join(styles, ";")) {
+			styles = fromZero
+		}
+		lineBuf.appendANSIStyle(styles)
+		lineBuf.WriteRune(n.blob)
+		previous = s
+	}
+	return lineBuf.String(), previous
+}

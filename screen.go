@@ -542,6 +542,29 @@ func (s *Screen) AsPlainText() string {
 	return strings.TrimSuffix(sb.String(), "\n")
 }
 
+func (s *Screen) AsANSI() string {
+	var sb strings.Builder
+
+	previousStyle := style(0)
+	lines := [][]node{{}}
+	for i, line := range s.screen {
+		lines[len(lines)-1] = append(lines[len(lines)-1], line.nodes...)
+		// Add a new line if there's a newline and this is not the last line
+		if line.newline && i != len(s.screen)-1 {
+			lines = append(lines, []node{})
+		}
+	}
+
+	for _, line := range lines {
+		var ansiLine string
+		ansiLine, previousStyle = outputLineAsANSI(line, previousStyle)
+		sb.WriteString(ansiLine)
+		sb.WriteString("\n")
+	}
+
+	return strings.TrimSuffix(sb.String(), "\n")
+}
+
 func (s *Screen) newLine() {
 	// Ensure the previous line, if it already exists, gets a \n in the render.
 	// This could happen if we got CSI A (cursor up), and then \n onto a line
@@ -637,4 +660,19 @@ func (l *screenLine) writeNode(x int, n node) {
 		l.nodes = append(l.nodes, emptyNode)
 	}
 	l.nodes[x] = n
+}
+
+func (s *Screen) FlushLinesFromTop(numLinesToRetain int) string {
+  numLinesToFlush := len(s.screen) - numLinesToRetain
+  if numLinesToFlush > s.y {
+    // log.Warningf("Screen attempted to pop line containing the current cursor position. Attempted to retain too few lines by %d line(s).", extraLines-s.y)
+    numLinesToFlush = s.y
+  }
+  if numLinesToFlush < 1 {
+    return ""
+  }
+  flushedLines := (&Screen{screen: s.screen[:numLinesToFlush]}).AsANSI()
+  s.screen = s.screen[numLinesToFlush:]
+  s.y -= numLinesToFlush
+  return flushedLines
 }
