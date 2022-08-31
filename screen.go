@@ -49,9 +49,14 @@ type Screen struct {
 	nodeRecycling [][]node
 
 	// Optional callback. If not nil, as each line is scrolled out of the top of
-	// the buffer, this func is called with the HTML.
+	// the buffer, this func is called with the rendered line.
 	// The line will always have a `\n` suffix.
-	ScrollOutFunc func(lineHTML string)
+	ScrollOutFunc func(renderedLine string)
+
+	// ScrollOutRenderer is what is used to render any lines being scrolled out
+	// before calling ScrollOutFunc on the rendered lines.
+	// Defaults to HTML.
+	scrollOutRenderer Renderer
 
 	// Processing statistics
 	LinesScrolledOut int // count of lines that scrolled off the top
@@ -63,6 +68,13 @@ type Screen struct {
 
 // ScreenOption is a functional option for creating new screens.
 type ScreenOption = func(*Screen) error
+
+func WithANSIRenderer() ScreenOption {
+	return func(s *Screen) error {
+		s.scrollOutRenderer = &ANSIRenderer{}
+		return nil
+	}
+}
 
 // WithSize sets the initial window size.
 func WithSize(w, h int) ScreenOption {
@@ -95,6 +107,7 @@ func NewScreen(opts ...ScreenOption) (*Screen, error) {
 		parser: parser{
 			mode: parserModeNormal,
 		},
+		scrollOutRenderer: &HTMLRenderer{},
 	}
 	s.parser.screen = s
 	for _, o := range opts {
@@ -243,21 +256,28 @@ func (s *Screen) currentLineForWriting() *screenLine {
 					break
 				}
 			}
-			s.ScrollOutFunc(lineToHTML(s.screen[:scrollOutTo]))
+			if scrollOutTo > 0 {
+				s.ScrollOutFunc(s.scrollOutRenderer.RenderLine(s.screen[:scrollOutTo]))
+			}
 		}
 		for i := range scrollOutTo {
 			s.nodeRecycling = append(s.nodeRecycling, s.screen[i].nodes[:0])
 		}
 		s.LinesScrolledOut += scrollOutTo
 
-		// Make a new line on the bottom using a recycled node slice. There's
-		// at least one we just added.
-		r1 := len(s.nodeRecycling) - 1
-		newLine := screenLine{
-			nodes:   s.nodeRecycling[r1],
-			newline: true,
+		var newLine screenLine
+		if len(s.nodeRecycling) > 0 {
+			// Make a new line on the bottom using a recycled node slice. There's
+			// normally at least one we just added.
+			r1 := len(s.nodeRecycling) - 1
+			newLine = screenLine{
+				nodes:   s.nodeRecycling[r1],
+				newline: true,
+			}
+			s.nodeRecycling = s.nodeRecycling[:r1]
+		} else {
+			newLine = screenLine{ newline: true }
 		}
-		s.nodeRecycling = s.nodeRecycling[:r1]
 		s.screen = append(s.screen[scrollOutTo:], newLine)
 
 		// Since the buffer added 1 line, s.y moves upwards.
@@ -540,6 +560,31 @@ func (s *Screen) AsPlainText() string {
 
 	// For backwards compatibility the final newline is trimmed.
 	return strings.TrimSuffix(sb.String(), "\n")
+}
+
+func (s *Screen) AsANSI(current ... style) (string, style) {
+	var sb strings.Builder
+
+	previousStyle := style(0)
+	for _, s := range current {
+		previousStyle |= s
+	}
+	lines := [][]node{{}}
+	for i, line := range s.screen {
+		lines[len(lines)-1] = append(lines[len(lines)-1], line.nodes...)
+		// Add a new line if there's a newline and this is not the last line
+		if line.newline && i != len(s.screen)-1 {
+			lines = append(lines, []node{})
+		}
+	}
+
+	for _, line := range lines {
+		var ansiLine string
+		ansiLine, previousStyle = lineToANSI([]screenLine{{nodes: line}}, previousStyle)
+		sb.WriteString(ansiLine)
+	}
+
+	return strings.TrimSuffix(sb.String(), "\n"), previousStyle
 }
 
 func (s *Screen) newLine() {

@@ -77,6 +77,16 @@ func (b *outputBuffer) appendChar(char rune) {
 	}
 }
 
+type Renderer interface {
+	RenderLine([]screenLine) string
+}
+
+type HTMLRenderer struct {}
+
+func (_ *HTMLRenderer) RenderLine(parts []screenLine) string {
+	return lineToHTML(parts)
+}
+
 // lineToHTML joins parts of a line together and renders them in HTML. It
 // ignores the newline field (i.e. assumes all parts are !newline except the
 // last part). The output string will have a terminating \n.
@@ -197,4 +207,65 @@ func (l *screenLine) asPlain() string {
 		line = strings.TrimRight(line, " \t") + "\n"
 	}
 	return line
+}
+
+func (b *outputBuffer) appendANSIStyle(styles []string) {
+	if len(styles) > 0 {
+		b.Write([]byte("\u001b["))
+		b.Write([]byte(styles[0]))
+		for _, code := range styles[1:] {
+			// only write semicolons after we write the first ANSI code
+			b.Write([]byte(";"))
+			b.Write([]byte(code))
+		}
+		b.Write([]byte("m"))
+	}
+}
+
+type ANSIRenderer struct {
+	current style
+}
+
+func (r *ANSIRenderer) RenderLine(parts []screenLine) string {
+	line, current := lineToANSI(parts, r.current)
+	r.current = current
+	return line
+}
+
+func lineToANSI(parts []screenLine, current ... style) (string, style) {
+	line := []node{}
+	for _, l := range parts {
+		line = append(line, l.nodes...)
+	}
+	nodes := line
+	for _, n := range slices.Backward(line) {
+		if n.style.bgColorType() != colorNone || (n.blob != ' ' && n.blob != '\t') {
+			break
+		}
+		// trim the trailing whitespace first, since we don't want to render what
+		// we don't need to and this would be harder after rendering anyway.
+		nodes = nodes[:len(nodes)-1]
+	}
+	previous := style(0)
+	for _, s := range current {
+		previous |= s
+	}
+	var lineBuf outputBuffer
+	for _, n := range nodes {
+		s := n.style
+		if n.blob == ' ' || n.blob == '\t' {
+			// if this is whitespace, the only style that can have an effect is
+			// background color.
+			s = (previous &^ (sbBGColorX | sbBGColor)) | (s & (sbBGColorX | sbBGColor))
+		}
+		styles := s.ANSITransform(previous)
+		fromZero := append([]string{""}, s.ANSITransform(style(0))...)
+		if len(strings.Join(fromZero, ";")) < len(strings.Join(styles, ";")) {
+			styles = fromZero
+		}
+		lineBuf.appendANSIStyle(styles)
+		lineBuf.WriteRune(n.blob)
+		previous = s
+	}
+	return lineBuf.String() + "\n", previous
 }
