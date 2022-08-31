@@ -7,8 +7,12 @@ import (
 	"strings"
 )
 
-// A terminal 'screen'. Current cursor position, cursor style, and characters
-type screen struct {
+func NewScreen() *Screen {
+	return &Screen{style: &emptyStyle}
+}
+
+// A terminal 'Screen'. Current cursor position, cursor style, and characters
+type Screen struct {
 	x      int
 	y      int
 	screen []screenLine
@@ -27,7 +31,7 @@ const screenEndOfLine = -1
 const screenStartOfLine = 0
 
 // Clear part (or all) of a line on the screen
-func (s *screen) clear(y int, xStart int, xEnd int) {
+func (s *Screen) clear(y int, xStart int, xEnd int) {
 	if len(s.screen) <= y {
 		return
 	}
@@ -57,28 +61,28 @@ func ansiInt(s string) int {
 }
 
 // Move the cursor up, if we can
-func (s *screen) up(i string) {
+func (s *Screen) up(i string) {
 	s.y -= ansiInt(i)
 	s.y = int(math.Max(0, float64(s.y)))
 }
 
 // Move the cursor down
-func (s *screen) down(i string) {
+func (s *Screen) down(i string) {
 	s.y += ansiInt(i)
 }
 
 // Move the cursor forward on the line
-func (s *screen) forward(i string) {
+func (s *Screen) forward(i string) {
 	s.x += ansiInt(i)
 }
 
 // Move the cursor backward, if we can
-func (s *screen) backward(i string) {
+func (s *Screen) backward(i string) {
 	s.x -= ansiInt(i)
 	s.x = int(math.Max(0, float64(s.x)))
 }
 
-func (s *screen) getCurrentLineForWriting() *screenLine {
+func (s *Screen) getCurrentLineForWriting() *screenLine {
 	// Add rows to our screen if necessary
 	for i := len(s.screen); i <= s.y; i++ {
 		s.screen = append(s.screen, screenLine{nodes: make([]node, 0, 80)})
@@ -94,25 +98,25 @@ func (s *screen) getCurrentLineForWriting() *screenLine {
 }
 
 // Write a character to the screen's current X&Y, along with the current screen style
-func (s *screen) write(data rune) {
+func (s *Screen) write(data rune) {
 	line := s.getCurrentLineForWriting()
 	line.nodes[s.x] = node{blob: data, style: s.style}
 }
 
 // Append a character to the screen
-func (s *screen) append(data rune) {
+func (s *Screen) append(data rune) {
 	s.write(data)
 	s.x++
 }
 
 // Append multiple characters to the screen
-func (s *screen) appendMany(data []rune) {
+func (s *Screen) appendMany(data []rune) {
 	for _, char := range data {
 		s.append(char)
 	}
 }
 
-func (s *screen) appendElement(i *element) {
+func (s *Screen) appendElement(i *element) {
 	line := s.getCurrentLineForWriting()
 	line.nodes[s.x] = node{style: s.style, elem: i}
 	s.x++
@@ -120,7 +124,7 @@ func (s *screen) appendElement(i *element) {
 
 // Set non-existing line metadata. Merges the provided data into any existing
 // metadata for the current line, keeping existing data when keys collide.
-func (s *screen) setnxLineMetadata(namespace string, data map[string]string) {
+func (s *Screen) setnxLineMetadata(namespace string, data map[string]string) {
 	line := s.getCurrentLineForWriting()
 	if line.metadata == nil {
 		line.metadata = make(map[string]map[string]string)
@@ -139,12 +143,12 @@ func (s *screen) setnxLineMetadata(namespace string, data map[string]string) {
 }
 
 // Apply color instruction codes to the screen's current style
-func (s *screen) color(i []string) {
+func (s *Screen) color(i []string) {
 	s.style = s.style.color(i)
 }
 
 // Apply an escape sequence to the screen
-func (s *screen) applyEscape(code rune, instructions []string) {
+func (s *Screen) applyEscape(code rune, instructions []string) {
 	if len(instructions) == 0 {
 		// Ensure we always have a first instruction
 		instructions = []string{""}
@@ -205,13 +209,13 @@ func (s *screen) applyEscape(code rune, instructions []string) {
 }
 
 // Parse ANSI input, populate our screen buffer with nodes
-func (s *screen) parse(ansi []byte) {
+func (s *Screen) parse(ansi []byte) {
 	s.style = &emptyStyle
 
-	parseANSIToScreen(s, ansi)
+	ParseANSIToScreen(s, ansi)
 }
 
-func (s *screen) asHTML() []byte {
+func (s *Screen) AsHTML() []byte {
 	var lines []string
 
 	for _, line := range s.screen {
@@ -222,7 +226,7 @@ func (s *screen) asHTML() []byte {
 }
 
 // asPlainText renders the screen without any ANSI style etc.
-func (s *screen) asPlainText() string {
+func (s *Screen) AsPlainText() string {
 	var buf bytes.Buffer
 	for i, line := range s.screen {
 		for _, node := range line.nodes {
@@ -237,23 +241,48 @@ func (s *screen) asPlainText() string {
 	return strings.TrimRight(buf.String(), " \t")
 }
 
-func (s *screen) newLine() {
+func (s *Screen) AsANSI() []byte {
+	var lines []string
+
+	for _, line := range s.screen {
+		lines = append(lines, outputLineAsANSI(line))
+	}
+
+	return []byte(strings.Join(lines, "\n"))
+}
+
+func (s *Screen) newLine() {
 	s.x = 0
 	s.y++
 }
 
-func (s *screen) revNewLine() {
+func (s *Screen) revNewLine() {
 	if s.y > 0 {
 		s.y--
 	}
 }
 
-func (s *screen) carriageReturn() {
+func (s *Screen) carriageReturn() {
 	s.x = 0
 }
 
-func (s *screen) backspace() {
+func (s *Screen) backspace() {
 	if s.x > 0 {
 		s.x--
 	}
+}
+
+func (s *Screen) FlushLinesFromTop(numLinesToRetain int) []byte {
+  numLinesToFlush := len(s.screen) - numLinesToRetain
+  if numLinesToFlush > s.y {
+    // log.Warningf("Screen attempted to pop line containing the current cursor position. Attempted to retain too few lines by %d line(s).", extraLines-s.y)
+    numLinesToFlush = s.y
+  }
+  if numLinesToFlush < 1 {
+    return []byte{}
+  }
+  flushedLines := (&Screen{screen: s.screen[:numLinesToFlush]}).AsANSI()
+  s.screen = s.screen[numLinesToFlush:]
+  s.y -= numLinesToFlush
+  return flushedLines
 }
