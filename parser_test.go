@@ -52,13 +52,13 @@ func TestParseXYAfterCursorMovementThroughBuildkiteTimestampAPC(t *testing.T) {
 
 // ----------------------------------------
 
-func parsedScreen(data string) *screen {
-	s := &screen{}
-	parseANSIToScreen(s, []byte(data))
+func parsedScreen(data string) *Screen {
+	s := &Screen{}
+	ParseANSIToScreen(s, []byte(data))
 	return s
 }
 
-func assertXY(t *testing.T, s *screen, x, y int) error {
+func assertXY(t *testing.T, s *Screen, x, y int) error {
 	if s.x != x {
 		return fmt.Errorf("expected screen.x == %d, got %d", x, s.x)
 	}
@@ -68,14 +68,14 @@ func assertXY(t *testing.T, s *screen, x, y int) error {
 	return nil
 }
 
-func assertText(t *testing.T, s *screen, expected string) error {
-	if actual := s.asPlainText(); actual != expected {
+func assertText(t *testing.T, s *Screen, expected string) error {
+	if actual := s.AsPlainText(); actual != expected {
 		return fmt.Errorf("expected text %q, got %q", expected, actual)
 	}
 	return nil
 }
 
-func assertTextXY(t *testing.T, s *screen, expected string, x, y int) error {
+func assertTextXY(t *testing.T, s *Screen, expected string, x, y int) error {
 	if err := assertXY(t, s, x, y); err != nil {
 		return err
 	}

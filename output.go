@@ -106,3 +106,42 @@ func outputLineAsHTML(line screenLine) string {
 	}
 	return strings.TrimRight(lineBuf.buf.String(), " \t")
 }
+
+func (b *outputBuffer) appendANSIStyle(n node) {
+	for _, code := range n.style.asANSICodes() {
+		b.buf.Write([]byte(code))
+	}
+}
+
+func (b *outputBuffer) resetANSI() {
+	b.buf.Write([]byte("\u001b[0m"))
+}
+
+func outputLineAsANSI(line screenLine) string {
+	var styleApplied bool
+	var lineBuf outputBuffer
+
+	for idx, node := range line.nodes {
+		if idx == 0 && !node.style.isEmpty() {
+			lineBuf.appendANSIStyle(node)
+			styleApplied = true
+		} else if idx > 0 {
+			previous := line.nodes[idx-1]
+			if !node.hasSameStyle(previous) {
+				if styleApplied {
+					lineBuf.resetANSI()
+					styleApplied = false
+				}
+				if !node.style.isEmpty() {
+					lineBuf.appendANSIStyle(node)
+					styleApplied = true
+				}
+			}
+		}
+		lineBuf.buf.WriteRune(node.blob)
+	}
+	if styleApplied {
+		lineBuf.resetANSI()
+	}
+	return strings.TrimRight(lineBuf.buf.String(), " \t")
+}

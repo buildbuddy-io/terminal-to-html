@@ -15,6 +15,7 @@ type style struct {
 	underline bool
 	strike    bool
 	blink     bool
+	colors    *[]string
 }
 
 const (
@@ -28,6 +29,18 @@ const (
 // True if both styles are equal (or are the same object)
 func (s *style) isEqual(o *style) bool {
 	return s == o || *s == *o
+}
+
+// ANSI codes that make up the style
+func (s *style) asANSICodes() []string {
+	var codes []string
+
+	if s.colors != nil {
+		for _, color := range *s.colors {
+			codes = append(codes, "\u001b["+color+"m")
+		}
+	}
+	return codes
 }
 
 // CSS classes that make up the style
@@ -93,6 +106,10 @@ func (s *style) color(colors []string) *style {
 
 	newStyle := style(*s)
 	s = &newStyle
+	if s.colors == nil {
+		s.colors = &[]string{}
+	}
+	*s.colors = append(*s.colors, colors...)
 	color_mode := COLOR_NORMAL
 
 	for _, ccs := range colors {
