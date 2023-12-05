@@ -29,6 +29,7 @@ type screenLine struct {
 
 const screenEndOfLine = -1
 const screenStartOfLine = 0
+const extraLinesToBuffer = 100
 
 // Clear part (or all) of a line on the screen
 func (s *Screen) clear(y int, xStart int, xEnd int) {
@@ -272,6 +273,13 @@ func (s *Screen) backspace() {
 	}
 }
 
+func min(x, y int) int {
+	if x > y {
+		return y
+	}
+	return x
+}
+
 func (s *Screen) FlushLinesFromTop(numLinesToRetain int) []byte {
   numLinesToFlush := len(s.screen) - numLinesToRetain
   if numLinesToFlush > s.y {
@@ -283,6 +291,12 @@ func (s *Screen) FlushLinesFromTop(numLinesToRetain int) []byte {
   }
   flushedLines := (&Screen{screen: s.screen[:numLinesToFlush]}).AsANSI()
   s.screen = s.screen[numLinesToFlush:]
+
+  // Hang onto the lines we just flushed instead of allocating them again.
+  for i := 0; i + numLinesToFlush < len(s.screen); i++ {
+	s.screen[i] = s.screen[i + numLinesToFlush]
+  }
+  s.screen = s.screen[:len(s.screen) - numLinesToFlush:min(len(s.screen), numLinesToRetain + extraLinesToBuffer)]
   s.y -= numLinesToFlush
   return flushedLines
 }
