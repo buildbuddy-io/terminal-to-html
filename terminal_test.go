@@ -900,7 +900,7 @@ var asANSITestCases = []struct {
 func TestAsANSI(t *testing.T) {
 	for _, c := range asANSITestCases {
 		t.Run(c.name, func(t *testing.T) {
-			got := (&Screen{screen: c.input}).AsANSI()
+			got, _ := (&Screen{screen: c.input}).AsANSI()
 			want := c.want
 
 			if diff := cmp.Diff(got, want); diff != "" {
