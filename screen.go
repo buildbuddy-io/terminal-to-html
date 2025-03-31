@@ -257,12 +257,17 @@ func (s *Screen) currentLineForWriting() *screenLine {
 
 		// Make a new line on the bottom using a recycled node slice. There's
 		// at least one we just added.
-		r1 := len(s.nodeRecycling) - 1
-		newLine := screenLine{
-			nodes:   s.nodeRecycling[r1],
-			newline: true,
+		var newLine screenLine
+		if len(s.nodeRecycling) > 0 {
+			r1 := len(s.nodeRecycling) - 1
+			newLine = screenLine{
+				nodes:   s.nodeRecycling[r1],
+				newline: true,
+			}
+			s.nodeRecycling = s.nodeRecycling[:r1]
+		} else {
+			newLine = screenLine{ newline: true }
 		}
-		s.nodeRecycling = s.nodeRecycling[:r1]
 		s.screen = append(s.screen[scrollOutTo:], newLine)
 
 		// Since the buffer added 1 line, s.y moves upwards.
