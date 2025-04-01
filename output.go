@@ -212,7 +212,11 @@ func (b *outputBuffer) appendANSIStyle(styles []string) {
 	}
 }
 
-func outputLineAsANSI(line []node, previous ... style) (string, style) {
+func lineToANSI(parts []screenLine, current ... style) (string, style) {
+	line := []node{}
+	for _, l := range parts {
+		line = append(line, l.nodes...)
+	}
 	nodes := line
 	for _, n := range slices.Backward(line) {
 		if n.style.bgColorType() != colorNone || (n.blob != ' ' && n.blob != '\t') {
@@ -222,9 +226,9 @@ func outputLineAsANSI(line []node, previous ... style) (string, style) {
 		// we don't need to and this would be harder after rendering anyway.
 		nodes = nodes[:len(nodes)-1]
 	}
-	p := style(0)
-	for _, s := range previous {
-		p |= s
+	previous := style(0)
+	for _, s := range current {
+		previous |= s
 	}
 	var lineBuf outputBuffer
 	for _, n := range nodes {
@@ -232,16 +236,16 @@ func outputLineAsANSI(line []node, previous ... style) (string, style) {
 		if n.blob == ' ' || n.blob == '\t' {
 			// if this is whitespace, the only style that can have an effect is
 			// background color.
-			s = (p &^ (sbBGColorX | sbBGColor)) | (s & (sbBGColorX | sbBGColor))
+			s = (previous &^ (sbBGColorX | sbBGColor)) | (s & (sbBGColorX | sbBGColor))
 		}
-		styles := s.ANSITransform(p)
+		styles := s.ANSITransform(previous)
 		fromZero := append([]string{""}, s.ANSITransform(style(0))...)
 		if len(strings.Join(fromZero, ";")) < len(strings.Join(styles, ";")) {
 			styles = fromZero
 		}
 		lineBuf.appendANSIStyle(styles)
 		lineBuf.WriteRune(n.blob)
-		p = s
+		previous = s
 	}
-	return lineBuf.String(), p
+	return lineBuf.String() + "\n", previous
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	// "slices"
 	"strconv"
 	"strings"
 )
@@ -53,6 +52,8 @@ type Screen struct {
 	// the buffer, this func is called with the ANSI.
 	// The line will always have a `\n` suffix.
 	ScrollOutFunc func(lineANSI string)
+
+	// ScrollOutRenderer 
 
 	scrollOutStyle style
 
@@ -248,8 +249,8 @@ func (s *Screen) currentLineForWriting() *screenLine {
 			}
 			if scrollOutTo > 0 {
 				var line string
-				line, s.scrollOutStyle = (&Screen{screen: s.screen[:scrollOutTo]}).AsANSI(s.scrollOutStyle)
-				s.ScrollOutFunc(fmt.Sprintf("%d %d %s", scrollOutTo, s.top(), line + "\n"))
+				line, s.scrollOutStyle = lineToANSI(s.screen[:scrollOutTo])
+				s.ScrollOutFunc(line)
 			}
 		}
 		for i := range scrollOutTo {
@@ -257,10 +258,10 @@ func (s *Screen) currentLineForWriting() *screenLine {
 		}
 		s.LinesScrolledOut += scrollOutTo
 
-		// Make a new line on the bottom using a recycled node slice. There's
-		// at least one we just added.
 		var newLine screenLine
 		if len(s.nodeRecycling) > 0 {
+			// Make a new line on the bottom using a recycled node slice. There's
+			// normally at least one we just added.
 			r1 := len(s.nodeRecycling) - 1
 			newLine = screenLine{
 				nodes:   s.nodeRecycling[r1],
@@ -572,9 +573,8 @@ func (s *Screen) AsANSI(previous ... style) (string, style) {
 
 	for _, line := range lines {
 		var ansiLine string
-		ansiLine, previousStyle = outputLineAsANSI(line, previousStyle)
+		ansiLine, previousStyle = lineToANSI([]screenLine{{nodes: line}}, previousStyle)
 		sb.WriteString(ansiLine)
-		sb.WriteString("\n")
 	}
 
 	return strings.TrimSuffix(sb.String(), "\n"), previousStyle
@@ -676,39 +676,3 @@ func (l *screenLine) writeNode(x int, n node) {
 	}
 	l.nodes[x] = n
 }
-
-/*
-func (s *Screen) FlushLinesFromTop(numLinesToRetain int) string {
-	if len(s.screen) == 0 {
-		// nothing to do.
-		return ""
-	}
-	if numLinesToRetain == 0 {
-		flush,  := s.AsANSI()
-		s.y = 0
-		s.screen = []screenLine{}
-		return flush
-	}
-	// We start with the last line, ignoring its newline field
-	flush := s.screen[len(s.screen)-1:]
-	retain := s.screen[:len(s.screen)-1]
-	lines := 1
-	for i, sl := range slices.Backward(s.screen[len(s.screen)-1:]) {
-		if sl.newline {
-			lines++
-			if lines > numLinesToRetain {
-				break
-			}
-			flush = s.screen[i:]
-			retain = s.screen[:i]
-		}
-	}
-	s.y -= len(flush)
-  if s.y < 0 {
-    // log.Warningf("Screen attempted to pop line containing the current cursor position. Attempted to retain too few lines by %d line(s).", extraLines-s.y)
-    s.y = 0
-  }
-  s.screen = retain
-  return (&Screen{screen: flush}).AsANSI()
-}
-*/
