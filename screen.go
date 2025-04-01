@@ -49,13 +49,14 @@ type Screen struct {
 	nodeRecycling [][]node
 
 	// Optional callback. If not nil, as each line is scrolled out of the top of
-	// the buffer, this func is called with the ANSI.
+	// the buffer, this func is called with the rendered line.
 	// The line will always have a `\n` suffix.
-	ScrollOutFunc func(lineANSI string)
+	ScrollOutFunc func(renderedLine string)
 
-	// ScrollOutRenderer 
-
-	scrollOutStyle style
+	// ScrollOutRenderer is what is used to render any lines being scrolled out
+	// before calling ScrollOutFunc on the rendered lines.
+	// Defaults to HTML.
+	scrollOutRenderer Renderer
 
 	// Processing statistics
 	LinesScrolledOut int // count of lines that scrolled off the top
@@ -67,6 +68,13 @@ type Screen struct {
 
 // ScreenOption is a functional option for creating new screens.
 type ScreenOption = func(*Screen) error
+
+func WithANSIRenderer() ScreenOption {
+	return func(s *Screen) error {
+		s.scrollOutRenderer = &ANSIRenderer{}
+		return nil
+	}
+}
 
 // WithSize sets the initial window size.
 func WithSize(w, h int) ScreenOption {
@@ -99,6 +107,7 @@ func NewScreen(opts ...ScreenOption) (*Screen, error) {
 		parser: parser{
 			mode: parserModeNormal,
 		},
+		scrollOutRenderer: &HTMLRenderer{},
 	}
 	s.parser.screen = s
 	for _, o := range opts {
@@ -248,9 +257,7 @@ func (s *Screen) currentLineForWriting() *screenLine {
 				}
 			}
 			if scrollOutTo > 0 {
-				var line string
-				line, s.scrollOutStyle = lineToANSI(s.screen[:scrollOutTo])
-				s.ScrollOutFunc(line)
+				s.ScrollOutFunc(s.scrollOutRenderer.RenderLine(s.screen[:scrollOutTo]))
 			}
 		}
 		for i := range scrollOutTo {
@@ -555,11 +562,11 @@ func (s *Screen) AsPlainText() string {
 	return strings.TrimSuffix(sb.String(), "\n")
 }
 
-func (s *Screen) AsANSI(previous ... style) (string, style) {
+func (s *Screen) AsANSI(current ... style) (string, style) {
 	var sb strings.Builder
 
 	previousStyle := style(0)
-	for _, s := range previous {
+	for _, s := range current {
 		previousStyle |= s
 	}
 	lines := [][]node{{}}

@@ -77,6 +77,16 @@ func (b *outputBuffer) appendChar(char rune) {
 	}
 }
 
+type Renderer interface {
+	RenderLine([]screenLine) string
+}
+
+type HTMLRenderer struct {}
+
+func (_ *HTMLRenderer) RenderLine(parts []screenLine) string {
+	return lineToHTML(parts)
+}
+
 // lineToHTML joins parts of a line together and renders them in HTML. It
 // ignores the newline field (i.e. assumes all parts are !newline except the
 // last part). The output string will have a terminating \n.
@@ -210,6 +220,16 @@ func (b *outputBuffer) appendANSIStyle(styles []string) {
 		}
 		b.Write([]byte("m"))
 	}
+}
+
+type ANSIRenderer struct {
+	current style
+}
+
+func (r *ANSIRenderer) RenderLine(parts []screenLine) string {
+	line, current := lineToANSI(parts, r.current)
+	r.current = current
+	return line
 }
 
 func lineToANSI(parts []screenLine, current ... style) (string, style) {
