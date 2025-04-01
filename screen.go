@@ -575,7 +575,7 @@ func (s *Screen) AsANSI(previous ... style) (string, style) {
 		sb.WriteString("\n")
 	}
 
-	return sb.String(), previousStyle
+	return strings.TrimSuffix(sb.String(), "\n"), previousStyle
 }
 
 func (s *Screen) newLine() {
