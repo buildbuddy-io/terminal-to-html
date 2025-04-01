@@ -248,7 +248,7 @@ func (s *Screen) currentLineForWriting() *screenLine {
 			}
 			var line string
 			line, s.scrollOutStyle = (&Screen{screen: s.screen[:scrollOutTo]}).AsANSI(s.scrollOutStyle)
-			s.ScrollOutFunc(line + "\n")
+			s.ScrollOutFunc(fmt.Sprintf("%d %s", scrollOutTo, line + "\n"))
 		}
 		for i := range scrollOutTo {
 			s.nodeRecycling = append(s.nodeRecycling, s.screen[i].nodes[:0])
