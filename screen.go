@@ -231,7 +231,7 @@ func (s *Screen) currentLineForWriting() *screenLine {
 		// Pass the whole line being scrolled out to ScrollOutFunc if available,
 		// otherwise just scroll out 1 line to nowhere.
 		scrollOutTo := 1
-		if s.ScrollOutFunc != nil {
+		if s.ScrollOutFunc != nil && len(s.screen) > 0 {
 			// Whole lines need to be passed to the callback. Find the end of
 			// the line (the screen line with newline = true).
 			// The majority of the time this will just be the first screen line.
@@ -248,7 +248,7 @@ func (s *Screen) currentLineForWriting() *screenLine {
 			}
 			var line string
 			line, s.scrollOutStyle = (&Screen{screen: s.screen[:scrollOutTo]}).AsANSI(s.scrollOutStyle)
-			s.ScrollOutFunc(fmt.Sprintf("%d %s", scrollOutTo, line + "\n"))
+			s.ScrollOutFunc(fmt.Sprintf("%d %d %s", scrollOutTo, s.top(), line + "\n"))
 		}
 		for i := range scrollOutTo {
 			s.nodeRecycling = append(s.nodeRecycling, s.screen[i].nodes[:0])
