@@ -236,11 +236,18 @@ func (s *Screen) currentLineForWriting() *screenLine {
 			// (so, allow scrollout to eat all of the "scrollback" but none of
 			// the "visible screen". We're talking a line that's 160*200
 			// chars long for the top of the screen to be reached that way.)
-			scrollOutTo = s.top()
-			for i, l := range s.screen[:scrollOutTo] {
-				if l.newline {
-					scrollOutTo = i + 1
-					break
+			if s.top() == 0 {
+				// If the top of the window is the last line, that is the line we need
+				// to scroll out. This is true even if the line consists of
+				// no screenlines.
+				scrollOutTo = len(s.screen)
+			} else {
+				scrollOutTo = s.top()
+				for i, l := range s.screen[:scrollOutTo] {
+					if l.newline {
+						scrollOutTo = i + 1
+						break
+					}
 				}
 			}
 			s.ScrollOutFunc(lineToHTML(s.screen[:scrollOutTo]))
@@ -250,14 +257,21 @@ func (s *Screen) currentLineForWriting() *screenLine {
 		}
 		s.LinesScrolledOut += scrollOutTo
 
-		// Make a new line on the bottom using a recycled node slice. There's
-		// at least one we just added.
-		r1 := len(s.nodeRecycling) - 1
+		var nodes []node
+		if r1 := len(s.nodeRecycling) - 1; r1 >= 0 {
+			// Make a new line on the bottom using a recycled node slice. There's
+			// usually at least one we just added.
+			nodes = s.nodeRecycling[r1]
+			s.nodeRecycling = s.nodeRecycling[:r1]
+		} else {
+			// No nodes to recycle, make a new node slice. This happens when we scroll
+			// out a line that conssisted of no screenlines.
+			nodes = make([]node, 0)
+		}
 		newLine := screenLine{
-			nodes:   s.nodeRecycling[r1],
+			nodes:   nodes,
 			newline: true,
 		}
-		s.nodeRecycling = s.nodeRecycling[:r1]
 		s.screen = append(s.screen[scrollOutTo:], newLine)
 
 		// Since the buffer added 1 line, s.y moves upwards.
