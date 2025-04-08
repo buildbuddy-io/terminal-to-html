@@ -222,13 +222,11 @@ func (b *outputBuffer) appendANSIStyle(styles []string) {
 	}
 }
 
-type ANSIRenderer struct {
-	current style
-}
+type ANSIRenderer struct {}
 
 func (r *ANSIRenderer) RenderLine(parts []screenLine) string {
-	line, current := lineToANSI(parts, r.current)
-	r.current = current
+	// Don't include a previous style
+	line, _ := lineToANSI(parts)
 	return line
 }
 
@@ -251,7 +249,7 @@ func lineToANSI(parts []screenLine, current ... style) (string, style) {
 		previous |= s
 	}
 	var lineBuf outputBuffer
-	for _, n := range nodes {
+	for i, n := range nodes {
 		s := n.style
 		if n.blob == ' ' || n.blob == '\t' {
 			// if this is whitespace, the only style that can have an effect is
@@ -260,7 +258,11 @@ func lineToANSI(parts []screenLine, current ... style) (string, style) {
 		}
 		styles := s.ANSITransform(previous)
 		fromZero := append([]string{""}, s.ANSITransform(style(0))...)
-		if len(strings.Join(fromZero, ";")) < len(strings.Join(styles, ";")) {
+		if len(strings.Join(fromZero, ";")) < len(strings.Join(styles, ";")) || (i == 0 && len(current) == 0) {
+			// If it's more concise to reset the style and specify it than it is to
+			// transform from the previous style, do that instead.
+			// Additionally, if there is no reported current style, reset the style at
+			// the beginning of the line.
 			styles = fromZero
 		}
 		lineBuf.appendANSIStyle(styles)
