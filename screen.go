@@ -163,6 +163,11 @@ func (s *Screen) down(i string) {
 		s.CursorDownOOB++
 		s.y = s.lines - 1
 	}
+	if len(s.screen) > 0 && s.y >= len(s.screen) {
+		// if we are moving the cursor down to a non-existent line, ensure that the
+		// last line ends in a newline.
+		s.screen[len(s.screen)-1].newline = true
+	}
 }
 
 // Move the cursor forward (right) on the line, if we can
@@ -205,6 +210,9 @@ func (s *Screen) currentLine() *screenLine {
 // line allocated in the buffer yet, allocates a new line and ensures it has
 // enough nodes to write something at the cursor position.
 func (s *Screen) currentLineForWriting() *screenLine {
+	// Track if we had to add a line, since the last line added should not have
+	// a new line, but all others should.
+	addedLine := false
 	// Ensure there are enough lines on screen to start writing here.
 	for s.currentLine() == nil {
 		// If maxLines is not in use, or adding a new line would not make it
@@ -226,6 +234,7 @@ func (s *Screen) currentLineForWriting() *screenLine {
 				newline: true,
 			}
 			s.screen = append(s.screen, newLine)
+			addedLine = true
 			if s.y >= s.lines {
 				// Because the "window" is always the last s.lines of s.screen
 				// (or all of them, if there are fewer lines than s.lines)
@@ -284,11 +293,15 @@ func (s *Screen) currentLineForWriting() *screenLine {
 			newline: true,
 		}
 		s.screen = append(s.screen[scrollOutTo:], newLine)
+		addedLine = true
 
 		// Since the buffer added 1 line, s.y moves upwards.
 		s.y--
 	}
 
+	if addedLine {
+		// s.currentLine().newline = false
+	}
 	return s.currentLine()
 }
 
