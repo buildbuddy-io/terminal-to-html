@@ -566,7 +566,42 @@ var asANSITestCases = []struct {
 				newline: true,
 			},
 		},
-		want: "012345",
+		want: "012345\n",
+	},
+	{
+		name:  "test plain text no newline",
+		input: []screenLine{
+			{
+				nodes: []node{
+					{
+						blob: '0',
+						style: style(0),
+					},
+					{
+						blob: '1',
+						style: style(0),
+					},
+					{
+						blob: '2',
+						style: style(0),
+					},
+					{
+						blob: '3',
+						style: style(0),
+					},
+					{
+						blob: '4',
+						style: style(0),
+					},
+					{
+						blob: '5',
+						style: style(0),
+					},
+				},
+				newline: true,
+			},
+		},
+		want: "012345\n",
 	},
 	{
 		name:  "test same style",
@@ -630,7 +665,7 @@ var asANSITestCases = []struct {
 				newline: true,
 			},
 		},
-		want: "\u001b[38;2;;187;;45;1;4m012345\n\n678\u001b[;1m9",
+		want: "\u001b[38;2;;187;;45;1;4m012345\n\n678\u001b[;1m9\n",
 	},
 	{
 		name:  "test style reset",

@@ -575,10 +575,10 @@ func (s *Screen) AsANSI(current ... style) (string, style) {
 		previousStyle |= s
 	}
 	lines := [][]node{{}}
-	for i, line := range s.screen {
+	for _, line := range s.screen {
 		lines[len(lines)-1] = append(lines[len(lines)-1], line.nodes...)
-		// Add a new line if there's a newline and this is not the last line
-		if line.newline && i != len(s.screen)-1 {
+		// Add a new line if there should be one.
+		if line.newline {
 			lines = append(lines, []node{})
 		}
 	}
