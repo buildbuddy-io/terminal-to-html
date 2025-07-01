@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -154,6 +155,7 @@ func (s *Screen) up(i string) {
 		s.CursorUpOOB++
 		s.y = 0
 	}
+	s.x = min(s.x, s.cols-1)
 }
 
 // Move the cursor down, if we can
@@ -163,11 +165,7 @@ func (s *Screen) down(i string) {
 		s.CursorDownOOB++
 		s.y = s.lines - 1
 	}
-	if len(s.screen) > 0 && s.y >= len(s.screen) {
-		// if we are moving the cursor down to a non-existent line, ensure that the
-		// last line ends in a newline.
-		s.screen[len(s.screen)-1].newline = true
-	}
+	s.x = min(s.x, s.cols-1)
 }
 
 // Move the cursor forward (right) on the line, if we can
@@ -210,9 +208,25 @@ func (s *Screen) currentLine() *screenLine {
 // line allocated in the buffer yet, allocates a new line and ensures it has
 // enough nodes to write something at the cursor position.
 func (s *Screen) currentLineForWriting() *screenLine {
-	// Track if we had to add a line, since the last line added should not have
-	// a new line, but all others should.
-	addedLine := false
+	// If the cursor is past the end, we actually need the line after this one.
+	if s.x == s.cols {
+		// Doing this at write time allows the cursor to be positioned past the end,
+		// as would happen if the entire line (including the last column) was
+		// written to, but doesn't allow writing past the last column.
+		// Since the cursor cannot be moved to s.cols, this can only happen if we
+		// have written all the way to the end of a line, so we can safely assume
+		// the current line exists.
+
+		// This is the only instance in which newline should be false.
+		s.currentLine().newline = false
+		s.x = 0
+		s.y++
+	} else if len(s.screen) > 0 && s.y >= len(s.screen) {
+		// Since we will be adding new lines and we are not continuing from the
+		// previous line, ensure the last line ends in a newline.
+		s.screen[len(s.screen)-1].newline = true
+	}
+	var newLine *screenLine
 	// Ensure there are enough lines on screen to start writing here.
 	for s.currentLine() == nil {
 		// If maxLines is not in use, or adding a new line would not make it
@@ -229,12 +243,12 @@ func (s *Screen) currentLineForWriting() *screenLine {
 				// No slices available for recycling, make a new one.
 				nodes = make([]node, 0, s.cols)
 			}
-			newLine := screenLine{
-				nodes:   nodes,
+			s.screen = slices.Grow(s.screen, 1)[:len(s.screen)+1]
+			newLine = &s.screen[len(s.screen)-1]
+			*newLine = screenLine{
+				nodes: nodes,
 				newline: true,
 			}
-			s.screen = append(s.screen, newLine)
-			addedLine = true
 			if s.y >= s.lines {
 				// Because the "window" is always the last s.lines of s.screen
 				// (or all of them, if there are fewer lines than s.lines)
@@ -270,6 +284,7 @@ func (s *Screen) currentLineForWriting() *screenLine {
 					break
 				}
 			}
+			s.screen[scrollOutTo-1].newline = true
 			s.ScrollOutFunc(s.scrollOutRenderer.RenderLine(s.screen[:scrollOutTo]))
 		}
 		for i := range scrollOutTo {
@@ -288,38 +303,30 @@ func (s *Screen) currentLineForWriting() *screenLine {
 			// out a line that consisted of no screenlines.
 			nodes = make([]node, 0)
 		}
-		newLine := screenLine{
-			nodes:   nodes,
+		s.screen = s.screen[scrollOutTo:]
+		s.screen = slices.Grow(s.screen, 1)[:len(s.screen)+1]
+		newLine = &s.screen[len(s.screen)-1]
+		*newLine = screenLine{
+			nodes: nodes,
 			newline: true,
 		}
-		s.screen = append(s.screen[scrollOutTo:], newLine)
-		addedLine = true
 
 		// Since the buffer added 1 line, s.y moves upwards.
 		s.y--
 	}
 
-	if addedLine {
-		s.currentLine().newline = false
+	if newLine != nil {
+		// The last line does not end in a new line. If it did, there would be a
+		// line below it and thus it would not be the last line.
+		newLine.newline = false
 	}
+
 	return s.currentLine()
 }
 
 // Write a character to the screen's current X&Y, along with the current screen style
 func (s *Screen) write(data rune) {
 	// Handle line wrapping
-	// Doing this at write time allows the cursor to be positioned past the end,
-	// as would happen if the entire line (including the last column) was
-	// written to, but doesn't allow writing past the last column.
-	if s.x >= s.cols {
-		// Don't actually wrap the line when outputting to plain text or HTML.
-		if line := s.currentLine(); line != nil {
-			line.newline = false
-		}
-		s.x = 0
-		s.y++
-	}
-
 	line := s.currentLineForWriting()
 	line.writeNode(s.x, node{blob: data, style: s.style})
 
@@ -348,13 +355,6 @@ func (s *Screen) appendMany(data []rune) {
 
 func (s *Screen) appendElement(i *element) {
 	// Handle wrapping. See comment in [write].
-	if s.x >= s.cols {
-		if line := s.currentLine(); line != nil {
-			line.newline = false
-		}
-		s.x = 0
-		s.y++
-	}
 
 	line := s.currentLineForWriting()
 	idx := len(line.elements)
@@ -565,8 +565,13 @@ func (s *Screen) AsHTML() string {
 		screen = screen[lineEnd:]
 	}
 
-	// For backwards compatibility the final newline is trimmed.
-	return strings.TrimSuffix(sb.String(), "\n")
+	// For backwards compatibility the final newline is trimmed. If the final line
+	// consists of only a non-breaking space, trim that, too.
+	render := sb.String()
+	if c, ok := strings.CutSuffix(render, "\n"); ok {
+	 	render = strings.TrimSuffix(c, "&nbsp;")
+	}
+	return render
 }
 
 // AsPlainText renders the screen without any ANSI style etc.
@@ -587,33 +592,38 @@ func (s *Screen) AsANSI(current ... style) (string, style) {
 	for _, s := range current {
 		previousStyle |= s
 	}
-	lines := [][]node{{}}
-	for _, line := range s.screen {
-		lines[len(lines)-1] = append(lines[len(lines)-1], line.nodes...)
-		// Add a new line if there should be one.
+	lineStart := 0
+	for i, line := range s.screen {
 		if line.newline {
-			lines = append(lines, []node{})
+			var ansiLine string
+			ansiLine, previousStyle = lineToANSI(s.screen[lineStart:i+1], previousStyle)
+			sb.WriteString(ansiLine)
+			lineStart = i+1
 		}
 	}
-
-	for _, line := range lines {
+	if lineStart < len(s.screen) {
 		var ansiLine string
-		ansiLine, previousStyle = lineToANSI([]screenLine{{nodes: line}}, previousStyle)
+		ansiLine, previousStyle = lineToANSI(s.screen[lineStart:], previousStyle)
 		sb.WriteString(ansiLine)
 	}
 
-	return strings.TrimSuffix(sb.String(), "\n"), previousStyle
+	return sb.String(), previousStyle
 }
 
 func (s *Screen) newLine() {
 	// Ensure the previous line, if it already exists, gets a \n in the render.
 	// This could happen if we got CSI A (cursor up), and then \n onto a line
 	// that had previously been wrapped from the previous line.
+	s.x = 0
 	if line := s.currentLine(); line != nil {
 		line.newline = true
 	}
-	s.x = 0
 	s.y++
+	// newlines are real characters being printed, not just moving the cursor.
+	// Getting the current line will force the Screen to add any missing lines
+	// to the slice of screenlines, which ensures that they get rendered and 
+	// scrolls out any content that should be.
+	_ = s.currentLineForWriting()
 }
 
 func (s *Screen) revNewLine() {

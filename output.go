@@ -185,10 +185,12 @@ func lineToHTML(parts []screenLine) string {
 	closeFrom(0)
 
 	out := strings.TrimRight(buf.String(), " \t")
-	if out == "" {
-		return "&nbsp;\n"
+	if len(parts) > 0 && parts[len(parts)-1].newline {
+		if out == "" {
+			return "&nbsp;\n"
+		}
+		out += "\n"
 	}
-	out += "\n"
 	return out
 }
 
@@ -267,5 +269,9 @@ func lineToANSI(parts []screenLine, current ... style) (string, style) {
 		lineBuf.WriteRune(n.blob)
 		previous = s
 	}
-	return lineBuf.String() + "\n", previous
+	render := lineBuf.String()
+	if len(parts) > 0 && parts[len(parts)-1].newline {
+		render = render + "\n"
+	}
+	return render, previous
 }

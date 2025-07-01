@@ -52,6 +52,11 @@ var rendererTestCases = []struct {
 		want:  "hello",
 	},
 	{
+		name:  "handles trailing double newline",
+		input: "hello\n\n",
+		want:  "hello\n",
+	},
+	{
 		name:  "closes colors that get opened",
 		input: "he\033[32mllo",
 		want:  "he<span class=\"term-fg32\">llo</span>",
@@ -175,7 +180,7 @@ var rendererTestCases = []struct {
 	{
 		name:  "allows clearing lines below the current line",
 		input: "foo\nbar\x1b[A\x1b[Jbaz",
-		want:  "foobaz\n&nbsp;",
+		want:  "foobaz\n",
 	},
 	{
 		name:  "doesn't freak out about clearing lines below when there aren't any",
@@ -513,12 +518,10 @@ func TestScreenWriteToXY(t *testing.T) {
 	}
 	s.write('a')
 
-	s.x = 1
-	s.y = 1
+	s.down("")
 	s.write('b')
 
-	s.x = 2
-	s.y = 2
+	s.down("")
 	s.write('c')
 
 	output := s.AsHTML()
@@ -598,10 +601,10 @@ var asANSITestCases = []struct {
 						style: style(0),
 					},
 				},
-				newline: true,
+				newline: false,
 			},
 		},
-		want: "012345\n",
+		want: "012345",
 	},
 	{
 		name:  "test same style",
