@@ -45,6 +45,10 @@ type Screen struct {
 	// It defaults to 160 columns * 100 lines.
 	cols, lines int
 
+	// Whether the emulated window should be treated as the real window or not.
+	// If set to true, supports absolute vertical cursor position.
+	realWindow bool
+
 	// When multiple screen lines are scrolled out at once, their storage can be
 	// recycled later on.
 	nodeRecycling [][]node
@@ -93,6 +97,16 @@ func WithMaxSize(maxCols, maxLines int) ScreenOption {
 		if maxLines > 0 {
 			s.lines = min(s.lines, maxLines)
 		}
+		return nil
+	}
+}
+
+// WithRealWindow tells the screen to treat the emulated window as though it is
+// the real window, which means supporting things like absolute vertical cursor
+// position.
+func WithRealWindow() ScreenOption {
+	return func(s *Screen) error {
+		s.realWindow = true
 		return nil
 	}
 }
@@ -217,7 +231,8 @@ func (s *Screen) currentLineForWriting() *screenLine {
 		// have written all the way to the end of a line, so we can safely assume
 		// the current line exists.
 
-		// This is the only instance in which newline should be false.
+		// This, and the final line, are the only instances in which newline should
+		// be false.
 		s.currentLine().newline = false
 		s.x = 0
 		s.y++
@@ -226,7 +241,7 @@ func (s *Screen) currentLineForWriting() *screenLine {
 		// previous line, ensure the last line ends in a newline.
 		s.screen[len(s.screen)-1].newline = true
 	}
-	var newLine *screenLine
+	var newLastLine *screenLine
 	// Ensure there are enough lines on screen to start writing here.
 	for s.currentLine() == nil {
 		// If maxLines is not in use, or adding a new line would not make it
@@ -244,8 +259,8 @@ func (s *Screen) currentLineForWriting() *screenLine {
 				nodes = make([]node, 0, s.cols)
 			}
 			s.screen = slices.Grow(s.screen, 1)[:len(s.screen)+1]
-			newLine = &s.screen[len(s.screen)-1]
-			*newLine = screenLine{
+			newLastLine = &s.screen[len(s.screen)-1]
+			*newLastLine = screenLine{
 				nodes: nodes,
 				newline: true,
 			}
@@ -261,53 +276,19 @@ func (s *Screen) currentLineForWriting() *screenLine {
 
 		// maxLines is in effect, and adding a new line would make the screen
 		// larger than maxLines.
-		// Pass the whole line being scrolled out to ScrollOutFunc if available,
-		// otherwise just scroll out 1 line to nowhere.
-		scrollOutTo := 1
+		// Scroll out one line.
 		if s.ScrollOutFunc != nil {
-			// Whole lines need to be passed to the callback. Find the end of
-			// the line (the screen line with newline = true).
-			// The majority of the time this will just be the first screen line.
-			// If it's all one enormous line, stop at the top of the screen.
-			// (so, allow scrollout to eat all of the "scrollback" but none of
-			// the "visible screen". We're talking a line that's 160*200
-			// chars long for the top of the screen to be reached that way.)
-			scrollOutTo = s.top()
-			if s.top() == 0 {
-				// We still need to scroll out a line, even if there are no lines above
-				// the top of the window. Get the next line.
-				scrollOutTo = len(s.screen)
-			}
-			for i, l := range s.screen[:scrollOutTo] {
-				if l.newline {
-					scrollOutTo = i + 1
-					break
-				}
-			}
-			s.screen[scrollOutTo-1].newline = true
-			s.ScrollOutFunc(s.scrollOutRenderer.RenderLine(s.screen[:scrollOutTo]))
+			s.ScrollOutFunc(s.scrollOutRenderer.RenderLine(s.screen[:1]))
 		}
-		for i := range scrollOutTo {
-			s.nodeRecycling = append(s.nodeRecycling, s.screen[i].nodes[:0])
-		}
-		s.LinesScrolledOut += scrollOutTo
 
-		var nodes []node
-		if r1 := len(s.nodeRecycling) - 1; r1 >= 0 {
-			// Make a new line on the bottom using a recycled node slice. There's
-			// usually at least one we just added.
-			nodes = s.nodeRecycling[r1]
-			s.nodeRecycling = s.nodeRecycling[:r1]
-		} else {
-			// No nodes to recycle, make a new node slice. This happens when we scroll
-			// out a line that consisted of no screenlines.
-			nodes = make([]node, 0)
-		}
-		s.screen = s.screen[scrollOutTo:]
+		recycledNodes := s.screen[0].nodes[:0]
+		s.screen = s.screen[1:]
+		s.LinesScrolledOut++
+
 		s.screen = slices.Grow(s.screen, 1)[:len(s.screen)+1]
-		newLine = &s.screen[len(s.screen)-1]
-		*newLine = screenLine{
-			nodes: nodes,
+		newLastLine = &s.screen[len(s.screen)-1]
+		*newLastLine = screenLine{
+			nodes: recycledNodes,
 			newline: true,
 		}
 
@@ -315,10 +296,10 @@ func (s *Screen) currentLineForWriting() *screenLine {
 		s.y--
 	}
 
-	if newLine != nil {
+	if newLastLine != nil {
 		// The last line does not end in a new line. If it did, there would be a
 		// line below it and thus it would not be the last line.
-		newLine.newline = false
+		newLastLine.newline = false
 	}
 
 	return s.currentLine()
@@ -444,6 +425,15 @@ func (s *Screen) applyEscape(code rune, instructions []string) {
 		s.x = min(s.x, s.cols-1)
 
 	case 'H': // Cursor Position Absolute: Go to row n and column m (default 1;1).
+		if s.realWindow {
+			s.y = ansiInt(inst(0)) - 1
+			s.y = max(s.y, 0)
+			s.y = min(s.y, s.lines -1)
+			s.x = ansiInt(inst(1)) - 1
+			s.x = max(s.x, 0)
+			s.x = min(s.x, s.cols-1)
+			break
+		}
 		//
 		// There are a variety of agent versions still in use, which have
 		// different PTY window settings. Although we emulate a window size
@@ -497,6 +487,9 @@ func (s *Screen) applyEscape(code rune, instructions []string) {
 			for i := start; i < len(s.screen); i++ {
 				s.screen[i].clearAll()
 			}
+			if len(s.screen) > 0 {
+				s.screen[len(s.screen)-1].newline = false
+			}
 
 		case "1": // "erase from beginning to current position (inclusive)"
 			s.currentLine().clear(screenStartOfLine, s.x) // same as ESC [1K
@@ -516,11 +509,17 @@ func (s *Screen) applyEscape(code rune, instructions []string) {
 			for i := s.top(); i < len(s.screen); i++ {
 				s.screen[i].clearAll()
 			}
+			if len(s.screen) > 0 {
+				s.screen[len(s.screen)-1].newline = false
+			}
 
 		case "3":
 			// 3: "erase whole display including scroll-back buffer"
 			for i := range s.screen {
 				s.screen[i].clearAll()
+			}
+			if len(s.screen) > 0 {
+				s.screen[len(s.screen)-1].newline = false
 			}
 		}
 

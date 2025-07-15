@@ -180,7 +180,7 @@ var rendererTestCases = []struct {
 	{
 		name:  "allows clearing lines below the current line",
 		input: "foo\nbar\x1b[A\x1b[Jbaz",
-		want:  "foobaz\n",
+		want:  "foobaz",
 	},
 	{
 		name:  "doesn't freak out about clearing lines below when there aren't any",
@@ -495,8 +495,7 @@ func TestStreamingRendererAgainstCases(t *testing.T) {
 }
 
 func TestStreamingRendererAgainstFixtures(t *testing.T) {
-	// Streaming vs non-streaming differs in adding a \n on extraordinarily
-	// huge lines, but huge-line is an important test for streaming mode.
+	// huge-line is an important test for streaming mode.
 	for _, base := range append(TestFiles, "huge-line.sh") {
 		t.Run(fmt.Sprintf("for fixture %q", base), func(t *testing.T) {
 			raw := loadFixture(t, base, "raw")
@@ -570,6 +569,117 @@ var asANSITestCases = []struct {
 			},
 		},
 		want: "012345\n",
+	},
+	{
+		name:  "test new lines",
+		input: []screenLine{
+			{
+				newline: true,
+			},
+			{
+				newline: true,
+			},
+			{
+				nodes: []node{
+					{
+						blob: '0',
+						style: style(0),
+					},
+				},
+				newline: true,
+			},
+			{
+				nodes: []node{
+					{
+						blob: '1',
+						style: style(0),
+					},
+				},
+				newline: true,
+			},
+			{
+				newline: true,
+			},
+			{
+				nodes: []node{
+					{
+						blob: '2',
+						style: style(0),
+					},
+				},
+				newline: true,
+			},
+			{
+				newline: true,
+			},
+			{
+				newline: true,
+			},
+			{
+				nodes: []node{
+					{
+						blob: '3',
+						style: style(0),
+					},
+				},
+				newline: true,
+			},
+			{
+				newline: true,
+			},
+			{
+				newline: true,
+			},
+			{
+				newline: true,
+			},
+			{
+				nodes: []node{
+					{
+						blob: '4',
+						style: style(0),
+					},
+				},
+				newline: true,
+			},
+			{
+				newline: true,
+			},
+			{
+				newline: true,
+			},
+			{
+				newline: true,
+			},
+			{
+				newline: true,
+			},
+			{
+				nodes: []node{
+					{
+						blob: '5',
+						style: style(0),
+					},
+				},
+				newline: true,
+			},
+			{
+				newline: true,
+			},
+			{
+				newline: true,
+			},
+			{
+				newline: true,
+			},
+			{
+				newline: true,
+			},
+			{
+				newline: false,
+			},
+		},
+		want: "\n\n0\n1\n\n2\n\n\n3\n\n\n\n4\n\n\n\n\n5\n\n\n\n\n",
 	},
 	{
 		name:  "test plain text no newline",

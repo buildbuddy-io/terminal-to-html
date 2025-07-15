@@ -87,10 +87,12 @@ func (_ *HTMLRenderer) RenderLine(parts []screenLine) string {
 	return lineToHTML(parts)
 }
 
-// lineToHTML joins parts of a line together and renders them in HTML. It
-// ignores the newline field (i.e. assumes all parts are !newline except the
-// last part). The output string will have a terminating \n.
+// lineToHTML joins parts of a line together and renders them in HTML.
 func lineToHTML(parts []screenLine) string {
+	if len(parts) == 0 {
+		return ""
+	}
+
 	var buf outputBuffer
 
 	// Combine metadata - last metadata wins.
@@ -185,7 +187,7 @@ func lineToHTML(parts []screenLine) string {
 	closeFrom(0)
 
 	out := strings.TrimRight(buf.String(), " \t")
-	if len(parts) > 0 && parts[len(parts)-1].newline {
+	if parts[len(parts)-1].newline {
 		if out == "" {
 			return "&nbsp;\n"
 		}
@@ -235,6 +237,13 @@ func (r *ANSIRenderer) RenderLine(parts []screenLine) string {
 }
 
 func lineToANSI(parts []screenLine, current ... style) (string, style) {
+	previous := style(0)
+	for _, s := range current {
+		previous |= s
+	}
+	if len(parts) == 0 {
+		return "", previous
+	}
 	line := []node{}
 	for _, l := range parts {
 		line = append(line, l.nodes...)
@@ -247,10 +256,6 @@ func lineToANSI(parts []screenLine, current ... style) (string, style) {
 		// trim the trailing whitespace first, since we don't want to render what
 		// we don't need to and this would be harder after rendering anyway.
 		nodes = nodes[:len(nodes)-1]
-	}
-	previous := style(0)
-	for _, s := range current {
-		previous |= s
 	}
 	var lineBuf outputBuffer
 	for _, n := range nodes {
@@ -270,7 +275,7 @@ func lineToANSI(parts []screenLine, current ... style) (string, style) {
 		previous = s
 	}
 	render := lineBuf.String()
-	if len(parts) > 0 && parts[len(parts)-1].newline {
+	if parts[len(parts)-1].newline {
 		render = render + "\n"
 	}
 	return render, previous
