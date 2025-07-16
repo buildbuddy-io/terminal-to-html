@@ -170,6 +170,44 @@ var scrollOutTestCases = []struct{
 	opts []ScreenOption
 } {
 	{
+		name: "Test single blank line",
+		input: []string{
+			"\n",
+		},
+		wantScrollOut: "",
+		wantWindow: []screenLine {
+			{
+				newline: true,
+				nodes: make([]node, 0),
+			},
+			{
+				newline: false,
+				nodes: make([]node, 0),
+			},
+		},
+	},
+	{
+		name: "Test two blank lines",
+		input: []string{
+			"\n\n",
+		},
+		wantScrollOut: "",
+		wantWindow: []screenLine {
+			{
+				newline: true,
+				nodes: make([]node, 0),
+			},
+			{
+				newline: true,
+				nodes: make([]node, 0),
+			},
+			{
+				newline: false,
+				nodes: make([]node, 0),
+			},
+		},
+	},
+	{
 		name: "Test leading newline",
 		input: []string{
 			"\n123456789",

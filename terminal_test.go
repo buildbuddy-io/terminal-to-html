@@ -571,6 +571,38 @@ var asANSITestCases = []struct {
 		want: "012345\n",
 	},
 	{
+		name:  "test single blank line",
+		input: []screenLine{
+			{
+				nodes: make([]node, 0),
+				newline: true,
+			},
+			{
+				nodes: make([]node, 0),
+				newline: false,
+			},
+		},
+		want: "\n",
+	},
+	{
+		name:  "test two blank lines",
+		input: []screenLine{
+			{
+				nodes: make([]node, 0),
+				newline: true,
+			},
+			{
+				nodes: make([]node, 0),
+				newline: true,
+			},
+			{
+				nodes: make([]node, 0),
+				newline: false,
+			},
+		},
+		want: "\n\n",
+	},
+	{
 		name:  "test new lines",
 		input: []screenLine{
 			{

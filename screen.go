@@ -487,9 +487,6 @@ func (s *Screen) applyEscape(code rune, instructions []string) {
 			for i := start; i < len(s.screen); i++ {
 				s.screen[i].clearAll()
 			}
-			if len(s.screen) > 0 {
-				s.screen[len(s.screen)-1].newline = false
-			}
 
 		case "1": // "erase from beginning to current position (inclusive)"
 			s.currentLine().clear(screenStartOfLine, s.x) // same as ESC [1K
@@ -509,18 +506,15 @@ func (s *Screen) applyEscape(code rune, instructions []string) {
 			for i := s.top(); i < len(s.screen); i++ {
 				s.screen[i].clearAll()
 			}
-			if len(s.screen) > 0 {
-				s.screen[len(s.screen)-1].newline = false
-			}
 
 		case "3":
 			// 3: "erase whole display including scroll-back buffer"
 			for i := range s.screen {
 				s.screen[i].clearAll()
 			}
-			if len(s.screen) > 0 {
-				s.screen[len(s.screen)-1].newline = false
-			}
+		}
+		if len(s.screen) > 0 {
+			s.screen[len(s.screen)-1].newline = false
 		}
 
 	case 'K': // Erase in Line: erases part of the line.
@@ -533,6 +527,9 @@ func (s *Screen) applyEscape(code rune, instructions []string) {
 
 		case "2":
 			s.currentLine().clearAll()
+			if len(s.screen) > 0 {
+				s.screen[len(s.screen)-1].newline = false
+			}
 		}
 
 	case 'M':
