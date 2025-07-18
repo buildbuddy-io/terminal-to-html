@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -43,6 +44,10 @@ type Screen struct {
 	// commands and implement line wrapping.
 	// It defaults to 160 columns * 100 lines.
 	cols, lines int
+
+	// Whether the emulated window should be treated as the real window or not.
+	// If set to true, supports absolute vertical cursor position.
+	realWindow bool
 
 	// When multiple screen lines are scrolled out at once, their storage can be
 	// recycled later on.
@@ -92,6 +97,16 @@ func WithMaxSize(maxCols, maxLines int) ScreenOption {
 		if maxLines > 0 {
 			s.lines = min(s.lines, maxLines)
 		}
+		return nil
+	}
+}
+
+// WithRealWindow tells the screen to treat the emulated window as though it is
+// the real window, which means supporting things like absolute vertical cursor
+// position.
+func WithRealWindow() ScreenOption {
+	return func(s *Screen) error {
+		s.realWindow = true
 		return nil
 	}
 }
@@ -154,6 +169,7 @@ func (s *Screen) up(i string) {
 		s.CursorUpOOB++
 		s.y = 0
 	}
+	s.x = min(s.x, s.cols-1)
 }
 
 // Move the cursor down, if we can
@@ -163,11 +179,7 @@ func (s *Screen) down(i string) {
 		s.CursorDownOOB++
 		s.y = s.lines - 1
 	}
-	if len(s.screen) > 0 && s.y >= len(s.screen) {
-		// if we are moving the cursor down to a non-existent line, ensure that the
-		// last line ends in a newline.
-		s.screen[len(s.screen)-1].newline = true
-	}
+	s.x = min(s.x, s.cols-1)
 }
 
 // Move the cursor forward (right) on the line, if we can
@@ -210,9 +222,26 @@ func (s *Screen) currentLine() *screenLine {
 // line allocated in the buffer yet, allocates a new line and ensures it has
 // enough nodes to write something at the cursor position.
 func (s *Screen) currentLineForWriting() *screenLine {
-	// Track if we had to add a line, since the last line added should not have
-	// a new line, but all others should.
-	addedLine := false
+	// If the cursor is past the end, we actually need the line after this one.
+	if s.x == s.cols {
+		// Doing this at write time allows the cursor to be positioned past the end,
+		// as would happen if the entire line (including the last column) was
+		// written to, but doesn't allow writing past the last column.
+		// Since the cursor cannot be moved to s.cols, this can only happen if we
+		// have written all the way to the end of a line, so we can safely assume
+		// the current line exists.
+
+		// This, and the final line, are the only instances in which newline should
+		// be false.
+		s.currentLine().newline = false
+		s.x = 0
+		s.y++
+	} else if len(s.screen) > 0 && s.y >= len(s.screen) {
+		// Since we will be adding new lines and we are not continuing from the
+		// previous line, ensure the last line ends in a newline.
+		s.screen[len(s.screen)-1].newline = true
+	}
+	var newLastLine *screenLine
 	// Ensure there are enough lines on screen to start writing here.
 	for s.currentLine() == nil {
 		// If maxLines is not in use, or adding a new line would not make it
@@ -229,12 +258,12 @@ func (s *Screen) currentLineForWriting() *screenLine {
 				// No slices available for recycling, make a new one.
 				nodes = make([]node, 0, s.cols)
 			}
-			newLine := screenLine{
-				nodes:   nodes,
+			s.screen = slices.Grow(s.screen, 1)[:len(s.screen)+1]
+			newLastLine = &s.screen[len(s.screen)-1]
+			*newLastLine = screenLine{
+				nodes: nodes,
 				newline: true,
 			}
-			s.screen = append(s.screen, newLine)
-			addedLine = true
 			if s.y >= s.lines {
 				// Because the "window" is always the last s.lines of s.screen
 				// (or all of them, if there are fewer lines than s.lines)
@@ -247,79 +276,38 @@ func (s *Screen) currentLineForWriting() *screenLine {
 
 		// maxLines is in effect, and adding a new line would make the screen
 		// larger than maxLines.
-		// Pass the whole line being scrolled out to ScrollOutFunc if available,
-		// otherwise just scroll out 1 line to nowhere.
-		scrollOutTo := 1
+		// Scroll out one line.
 		if s.ScrollOutFunc != nil {
-			// Whole lines need to be passed to the callback. Find the end of
-			// the line (the screen line with newline = true).
-			// The majority of the time this will just be the first screen line.
-			// If it's all one enormous line, stop at the top of the screen.
-			// (so, allow scrollout to eat all of the "scrollback" but none of
-			// the "visible screen". We're talking a line that's 160*200
-			// chars long for the top of the screen to be reached that way.)
-			scrollOutTo = s.top()
-			if s.top() == 0 {
-				// We still need to scroll out a line, even if there are no lines above
-				// the top of the window. Get the next line.
-				scrollOutTo = len(s.screen)
-			}
-			for i, l := range s.screen[:scrollOutTo] {
-				if l.newline {
-					scrollOutTo = i + 1
-					break
-				}
-			}
-			s.ScrollOutFunc(s.scrollOutRenderer.RenderLine(s.screen[:scrollOutTo]))
+			s.ScrollOutFunc(s.scrollOutRenderer.RenderLine(s.screen[:1]))
 		}
-		for i := range scrollOutTo {
-			s.nodeRecycling = append(s.nodeRecycling, s.screen[i].nodes[:0])
-		}
-		s.LinesScrolledOut += scrollOutTo
 
-		var nodes []node
-		if r1 := len(s.nodeRecycling) - 1; r1 >= 0 {
-			// Make a new line on the bottom using a recycled node slice. There's
-			// usually at least one we just added.
-			nodes = s.nodeRecycling[r1]
-			s.nodeRecycling = s.nodeRecycling[:r1]
-		} else {
-			// No nodes to recycle, make a new node slice. This happens when we scroll
-			// out a line that consisted of no screenlines.
-			nodes = make([]node, 0)
-		}
-		newLine := screenLine{
-			nodes:   nodes,
+		recycledNodes := s.screen[0].nodes[:0]
+		s.screen = s.screen[1:]
+		s.LinesScrolledOut++
+
+		s.screen = slices.Grow(s.screen, 1)[:len(s.screen)+1]
+		newLastLine = &s.screen[len(s.screen)-1]
+		*newLastLine = screenLine{
+			nodes: recycledNodes,
 			newline: true,
 		}
-		s.screen = append(s.screen[scrollOutTo:], newLine)
-		addedLine = true
 
 		// Since the buffer added 1 line, s.y moves upwards.
 		s.y--
 	}
 
-	if addedLine {
-		// s.currentLine().newline = false
+	if newLastLine != nil {
+		// The last line does not end in a new line. If it did, there would be a
+		// line below it and thus it would not be the last line.
+		newLastLine.newline = false
 	}
+
 	return s.currentLine()
 }
 
 // Write a character to the screen's current X&Y, along with the current screen style
 func (s *Screen) write(data rune) {
 	// Handle line wrapping
-	// Doing this at write time allows the cursor to be positioned past the end,
-	// as would happen if the entire line (including the last column) was
-	// written to, but doesn't allow writing past the last column.
-	if s.x >= s.cols {
-		// Don't actually wrap the line when outputting to plain text or HTML.
-		if line := s.currentLine(); line != nil {
-			line.newline = false
-		}
-		s.x = 0
-		s.y++
-	}
-
 	line := s.currentLineForWriting()
 	line.writeNode(s.x, node{blob: data, style: s.style})
 
@@ -348,13 +336,6 @@ func (s *Screen) appendMany(data []rune) {
 
 func (s *Screen) appendElement(i *element) {
 	// Handle wrapping. See comment in [write].
-	if s.x >= s.cols {
-		if line := s.currentLine(); line != nil {
-			line.newline = false
-		}
-		s.x = 0
-		s.y++
-	}
 
 	line := s.currentLineForWriting()
 	idx := len(line.elements)
@@ -444,6 +425,15 @@ func (s *Screen) applyEscape(code rune, instructions []string) {
 		s.x = min(s.x, s.cols-1)
 
 	case 'H': // Cursor Position Absolute: Go to row n and column m (default 1;1).
+		if s.realWindow {
+			s.y = ansiInt(inst(0)) - 1
+			s.y = max(s.y, 0)
+			s.y = min(s.y, s.lines -1)
+			s.x = ansiInt(inst(1)) - 1
+			s.x = max(s.x, 0)
+			s.x = min(s.x, s.cols-1)
+			break
+		}
 		//
 		// There are a variety of agent versions still in use, which have
 		// different PTY window settings. Although we emulate a window size
@@ -523,6 +513,9 @@ func (s *Screen) applyEscape(code rune, instructions []string) {
 				s.screen[i].clearAll()
 			}
 		}
+		if len(s.screen) > 0 {
+			s.screen[len(s.screen)-1].newline = false
+		}
 
 	case 'K': // Erase in Line: erases part of the line.
 		switch inst(0) {
@@ -534,6 +527,9 @@ func (s *Screen) applyEscape(code rune, instructions []string) {
 
 		case "2":
 			s.currentLine().clearAll()
+			if len(s.screen) > 0 {
+				s.screen[len(s.screen)-1].newline = false
+			}
 		}
 
 	case 'M':
@@ -565,8 +561,13 @@ func (s *Screen) AsHTML() string {
 		screen = screen[lineEnd:]
 	}
 
-	// For backwards compatibility the final newline is trimmed.
-	return strings.TrimSuffix(sb.String(), "\n")
+	// For backwards compatibility the final newline is trimmed. If the final line
+	// consists of only a non-breaking space, trim that, too.
+	render := sb.String()
+	if c, ok := strings.CutSuffix(render, "\n"); ok {
+	 	render = strings.TrimSuffix(c, "&nbsp;")
+	}
+	return render
 }
 
 // AsPlainText renders the screen without any ANSI style etc.
@@ -587,33 +588,36 @@ func (s *Screen) AsANSI(current ... style) (string, style) {
 	for _, s := range current {
 		previousStyle |= s
 	}
-	lines := [][]node{{}}
-	for _, line := range s.screen {
-		lines[len(lines)-1] = append(lines[len(lines)-1], line.nodes...)
-		// Add a new line if there should be one.
+	lineStart := 0
+	for i, line := range s.screen {
 		if line.newline {
-			lines = append(lines, []node{})
+			var ansiLine string
+			ansiLine, previousStyle = lineToANSI(s.screen[lineStart:i+1], previousStyle)
+			sb.WriteString(ansiLine)
+			lineStart = i+1
 		}
 	}
-
-	for _, line := range lines {
+	if lineStart < len(s.screen) {
 		var ansiLine string
-		ansiLine, previousStyle = lineToANSI([]screenLine{{nodes: line}}, previousStyle)
+		ansiLine, previousStyle = lineToANSI(s.screen[lineStart:], previousStyle)
 		sb.WriteString(ansiLine)
 	}
 
-	return strings.TrimSuffix(sb.String(), "\n"), previousStyle
+	return sb.String(), previousStyle
 }
 
 func (s *Screen) newLine() {
 	// Ensure the previous line, if it already exists, gets a \n in the render.
 	// This could happen if we got CSI A (cursor up), and then \n onto a line
 	// that had previously been wrapped from the previous line.
-	if line := s.currentLine(); line != nil {
-		line.newline = true
-	}
 	s.x = 0
+	s.currentLineForWriting().newline = true
 	s.y++
+	// newlines are real characters being printed, not just moving the cursor.
+	// Getting the current line will force the Screen to add any missing lines
+	// to the slice of screenlines, which ensures that they get rendered and 
+	// scrolls out any content that should be.
+	_ = s.currentLineForWriting()
 }
 
 func (s *Screen) revNewLine() {
