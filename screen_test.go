@@ -692,3 +692,322 @@ func TestScrollout(t *testing.T) {
 		})
 	}
 }
+
+var UnlimitedWindowTestCases = []struct{
+	name string
+	input []string
+	wantWindow []screenLine
+	opts []ScreenOption
+} {
+	{
+		name: "Test single blank line",
+		input: []string{
+			"\n",
+		},
+		wantWindow: []screenLine {
+			{
+				newline: true,
+				nodes: make([]node, 0),
+			},
+			{
+				newline: false,
+				nodes: make([]node, 0),
+			},
+		},
+	},
+	{
+		name: "Test two blank lines",
+		input: []string{
+			"\n\n",
+		},
+		wantWindow: []screenLine {
+			{
+				newline: true,
+				nodes: make([]node, 0),
+			},
+			{
+				newline: true,
+				nodes: make([]node, 0),
+			},
+			{
+				newline: false,
+				nodes: make([]node, 0),
+			},
+		},
+	},
+	{
+		name: "Test two blank lines surrounding text",
+		input: []string{
+			"\nabc\n",
+		},
+		wantWindow: []screenLine {
+			{
+				newline: true,
+				nodes: make([]node, 0),
+			},
+			{
+				newline: true,
+				nodes: []node{
+					{
+						blob: 'a',
+					},
+					{
+						blob: 'b',
+					},
+					{
+						blob: 'c',
+					},
+				},
+			},
+			{
+				newline: false,
+				nodes: make([]node, 0),
+			},
+		},
+	},
+}
+
+func TestUnlimitedWindowSize(t *testing.T) {
+	diffOpt := cmp.AllowUnexported(*new(screenLine), *new(node))
+	sizeOpt := WithMaxSize(100, 0)
+
+	for _, tc := range UnlimitedWindowTestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := NewScreen(sizeOpt, WithANSIRenderer(), WithRealWindow())
+			if err != nil {
+				t.Errorf("NewScreen returned an error: %s", err)
+			}
+			for _, b := range tc.input {
+				_, err := s.Write([]byte(b))
+				if err != nil {
+					t.Errorf("screen.Write returned an error: %s", err)
+				}
+			}
+			if diff := cmp.Diff(s.screen, tc.wantWindow, diffOpt); diff != "" {
+				renderedActual, _ := s.AsANSI()
+				e, err := NewScreen(sizeOpt, WithANSIRenderer())
+				if err != nil {
+					t.Errorf("NewScreen returned an error: %s", err)
+				}
+				e.screen = tc.wantWindow
+				renderedExpected, _ := e.AsANSI()
+				t.Errorf(
+					"window (-got +want):\n%s\nrendered actual:\n----------\n%s\n----------\nrendered expected:\n----------\n%s\n----------\n",
+					diff,
+					renderedActual,
+					renderedExpected,
+				)
+			}
+		})
+	}
+}
+
+var WindowHeight1TestCases = []struct{
+	name string
+	input []string
+	wantWindow []screenLine
+	wantScrollOut string
+	opts []ScreenOption
+} {
+	{
+		name: "Test single blank line",
+		input: []string{
+			"\n",
+		},
+		wantScrollOut: "\n",
+		wantWindow: []screenLine {
+			{
+				newline: false,
+				nodes: make([]node, 0),
+			},
+		},
+	},
+	{
+		name: "Test two blank lines",
+		input: []string{
+			"\n\n",
+		},
+		wantScrollOut: "\n\n",
+		wantWindow: []screenLine {
+			{
+				newline: false,
+				nodes: make([]node, 0),
+			},
+		},
+	},
+	{
+		name: "Test two blank lines surrounding text",
+		input: []string{
+			"\nabc\n",
+		},
+		wantScrollOut: "\nabc\n",
+		wantWindow: []screenLine {
+			{
+				newline: false,
+				nodes: make([]node, 0),
+			},
+		},
+	},
+}
+
+func TestWindowHeight1(t *testing.T) {
+	diffOpt := cmp.AllowUnexported(*new(screenLine), *new(node))
+	sizeOpt := WithMaxSize(100, 1)
+
+	for _, tc := range WindowHeight1TestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := NewScreen(sizeOpt, WithANSIRenderer(), WithRealWindow())
+			if err != nil {
+				t.Errorf("NewScreen returned an error: %s", err)
+			}
+			sb := strings.Builder{}
+			s.ScrollOutFunc = func(line string) {
+				sb.Write([]byte(line))
+				t.Logf("Scrollout called with line:\n---------\n%s\n----------\n", line)
+			} 
+			for _, b := range tc.input {
+				_, err := s.Write([]byte(b))
+				if err != nil {
+					t.Errorf("screen.Write returned an error: %s", err)
+				}
+			}
+			if diff := cmp.Diff(s.screen, tc.wantWindow, diffOpt); diff != "" {
+				renderedActual, _ := s.AsANSI()
+				e, err := NewScreen(sizeOpt, WithANSIRenderer())
+				if err != nil {
+					t.Errorf("NewScreen returned an error: %s", err)
+				}
+				e.screen = tc.wantWindow
+				renderedExpected, _ := e.AsANSI()
+				t.Errorf(
+					"window (-got +want):\n%s\nrendered actual:\n----------\n%s\n----------\nrendered expected:\n----------\n%s\n----------\n",
+					diff,
+					renderedActual,
+					renderedExpected,
+				)
+			}
+			if diff := cmp.Diff(sb.String(), tc.wantScrollOut, diffOpt); diff != "" {
+				t.Errorf(
+					"scrollout (-got +want):\n%s",
+					diff,
+				)
+			}
+		})
+	}
+}
+
+var WindowHeight2TestCases = []struct{
+	name string
+	input []string
+	wantWindow []screenLine
+	wantScrollOut string
+	opts []ScreenOption
+} {
+	{
+		name: "Test single blank line",
+		input: []string{
+			"\n",
+		},
+		wantScrollOut: "",
+		wantWindow: []screenLine {
+			{
+				newline: true,
+				nodes: make([]node, 0),
+			},
+			{
+				newline: false,
+				nodes: make([]node, 0),
+			},
+		},
+	},
+	{
+		name: "Test two blank lines",
+		input: []string{
+			"\n\n",
+		},
+		wantScrollOut: "\n",
+		wantWindow: []screenLine {
+			{
+				newline: true,
+				nodes: make([]node, 0),
+			},
+			{
+				newline: false,
+				nodes: make([]node, 0),
+			},
+		},
+	},
+	{
+		name: "Test two blank lines surrounding text",
+		input: []string{
+			"\nabc\n",
+		},
+		wantScrollOut: "\n",
+		wantWindow: []screenLine {
+			{
+				newline: true,
+				nodes: []node{
+					{
+						blob: 'a',
+					},
+					{
+						blob: 'b',
+					},
+					{
+						blob: 'c',
+					},
+				},
+			},
+			{
+				newline: false,
+				nodes: make([]node, 0),
+			},
+		},
+	},
+}
+
+func TestWindowHeight2(t *testing.T) {
+	diffOpt := cmp.AllowUnexported(*new(screenLine), *new(node))
+	sizeOpt := WithMaxSize(100, 2)
+
+	for _, tc := range WindowHeight2TestCases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := NewScreen(sizeOpt, WithANSIRenderer(), WithRealWindow())
+			if err != nil {
+				t.Errorf("NewScreen returned an error: %s", err)
+			}
+			sb := strings.Builder{}
+			s.ScrollOutFunc = func(line string) {
+				sb.Write([]byte(line))
+				t.Logf("Scrollout called with line:\n---------\n%s\n----------\n", line)
+			} 
+			for _, b := range tc.input {
+				_, err := s.Write([]byte(b))
+				if err != nil {
+					t.Errorf("screen.Write returned an error: %s", err)
+				}
+			}
+			if diff := cmp.Diff(s.screen, tc.wantWindow, diffOpt); diff != "" {
+				renderedActual, _ := s.AsANSI()
+				e, err := NewScreen(sizeOpt, WithANSIRenderer())
+				if err != nil {
+					t.Errorf("NewScreen returned an error: %s", err)
+				}
+				e.screen = tc.wantWindow
+				renderedExpected, _ := e.AsANSI()
+				t.Errorf(
+					"window (-got +want):\n%s\nrendered actual:\n----------\n%s\n----------\nrendered expected:\n----------\n%s\n----------\n",
+					diff,
+					renderedActual,
+					renderedExpected,
+				)
+			}
+			if diff := cmp.Diff(sb.String(), tc.wantScrollOut, diffOpt); diff != "" {
+				t.Errorf(
+					"scrollout (-got +want):\n%s",
+					diff,
+				)
+			}
+		})
+	}
+}

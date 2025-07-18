@@ -611,9 +611,7 @@ func (s *Screen) newLine() {
 	// This could happen if we got CSI A (cursor up), and then \n onto a line
 	// that had previously been wrapped from the previous line.
 	s.x = 0
-	if line := s.currentLine(); line != nil {
-		line.newline = true
-	}
+	s.currentLineForWriting().newline = true
 	s.y++
 	// newlines are real characters being printed, not just moving the cursor.
 	// Getting the current line will force the Screen to add any missing lines
