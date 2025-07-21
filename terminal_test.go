@@ -865,6 +865,19 @@ var asANSITestCases = []struct {
 			{
 				nodes: []node{
 					{
+						blob: '1',
+						style: style(0),
+					},
+					{
+						blob: ' ',
+						style: style(0),
+					},
+				},
+				newline: false,
+			},
+			{
+				nodes: []node{
+					{
 						blob: ' ',
 						style: style(0),
 					},
@@ -928,9 +941,10 @@ var asANSITestCases = []struct {
 						style: style(0),
 					},
 				},
+				newline: true,
 			},
 		},
-		want: "0\n 1\n\n 2   \u001b[45m ",
+		want: "0\n1  1\n\n 2   \u001b[45m \n",
 	},
 	{
 		name:  "test style transform",
@@ -1074,6 +1088,74 @@ var asANSITestCases = []struct {
 			"0\u001b[1m1\u001b[2m2\u001b[1m3\u001b[m4\u001b[2m5" +
 			"\u001b[m6\u001b[38;2;218;187;237;2m7\u001b[1m8\u001b[22m9" +
 			"\u001b[1ma\u001b[2mb\u001b[22mc"),
+	},
+	{
+		name: "Test leading whitespace with no newline",
+		want: " a",
+		input: []screenLine {
+			{
+				newline: false,
+				nodes: []node{
+					{
+						blob: ' ',
+					},
+					{
+						blob: 'a',
+					},
+				},
+			},
+		},
+	},
+	{
+		name: "Test whitespace with no newline",
+		want: " ",
+		input: []screenLine {
+			{
+				newline: false,
+				nodes: []node{
+					{
+						blob: ' ',
+					},
+				},
+			},
+		},
+	},
+	{
+		name: "Test trailing whitespace with no newline",
+		want: "a ",
+		input: []screenLine {
+			{
+				newline: false,
+				nodes: []node{
+					{
+						blob: 'a',
+					},
+					{
+						blob: ' ',
+					},
+				},
+			},
+		},
+	},
+	{
+		name: "Test surrounding whitespace with no newline",
+		want: " a ",
+		input: []screenLine {
+			{
+				newline: false,
+				nodes: []node{
+					{
+						blob: ' ',
+					},
+					{
+						blob: 'a',
+					},
+					{
+						blob: ' ',
+					},
+				},
+			},
+		},
 	},
 }
 

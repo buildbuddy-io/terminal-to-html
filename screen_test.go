@@ -62,6 +62,82 @@ var screenWriteTestCases = []struct{
 	opts []ScreenOption
 } {
 	{
+		name: "Test leading whitespace with no newline",
+		input: []string{
+			" a",
+		},
+		want: []screenLine {
+			{
+				newline: false,
+				nodes: []node{
+					{
+						blob: ' ',
+					},
+					{
+						blob: 'a',
+					},
+				},
+			},
+		},
+	},
+	{
+		name: "Test whitespace with no newline",
+		input: []string{
+			" ",
+		},
+		want: []screenLine {
+			{
+				newline: false,
+				nodes: []node{
+					{
+						blob: ' ',
+					},
+				},
+			},
+		},
+	},
+	{
+		name: "Test trailing whitespace with no newline",
+		input: []string{
+			"a ",
+		},
+		want: []screenLine {
+			{
+				newline: false,
+				nodes: []node{
+					{
+						blob: 'a',
+					},
+					{
+						blob: ' ',
+					},
+				},
+			},
+		},
+	},
+	{
+		name: "Test surrounding whitespace with no newline",
+		input: []string{
+			" a ",
+		},
+		want: []screenLine {
+			{
+				newline: false,
+				nodes: []node{
+					{
+						blob: ' ',
+					},
+					{
+						blob: 'a',
+					},
+					{
+						blob: ' ',
+					},
+				},
+			},
+		},
+	},
+	{
 		name: "Test leading newline",
 		input: []string{
 			"\n1234",
@@ -762,6 +838,82 @@ var UnlimitedWindowTestCases = []struct{
 			{
 				newline: false,
 				nodes: make([]node, 0),
+			},
+		},
+	},
+	{
+		name: "Test leading whitespace with no newline",
+		input: []string{
+			" a",
+		},
+		wantWindow: []screenLine {
+			{
+				newline: false,
+				nodes: []node{
+					{
+						blob: ' ',
+					},
+					{
+						blob: 'a',
+					},
+				},
+			},
+		},
+	},
+	{
+		name: "Test whitespace with no newline",
+		input: []string{
+			" ",
+		},
+		wantWindow: []screenLine {
+			{
+				newline: false,
+				nodes: []node{
+					{
+						blob: ' ',
+					},
+				},
+			},
+		},
+	},
+	{
+		name: "Test trailing whitespace with no newline",
+		input: []string{
+			"a ",
+		},
+		wantWindow: []screenLine {
+			{
+				newline: false,
+				nodes: []node{
+					{
+						blob: 'a',
+					},
+					{
+						blob: ' ',
+					},
+				},
+			},
+		},
+	},
+	{
+		name: "Test surrounding whitespace with no newline",
+		input: []string{
+			" a ",
+		},
+		wantWindow: []screenLine {
+			{
+				newline: false,
+				nodes: []node{
+					{
+						blob: ' ',
+					},
+					{
+						blob: 'a',
+					},
+					{
+						blob: ' ',
+					},
+				},
 			},
 		},
 	},

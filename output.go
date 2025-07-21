@@ -249,13 +249,16 @@ func lineToANSI(parts []screenLine, current ... style) (string, style) {
 		line = append(line, l.nodes...)
 	}
 	nodes := line
-	for _, n := range slices.Backward(line) {
-		if n.style.bgColorType() != colorNone || (n.blob != ' ' && n.blob != '\t') {
-			break
+	newline := parts[len(parts)-1].newline
+	if newline {
+		for _, n := range slices.Backward(line) {
+			if n.style.bgColorType() != colorNone || (n.blob != ' ' && n.blob != '\t') {
+				break
+			}
+			// trim the trailing whitespace first, since we don't want to render what
+			// we don't need to and this would be harder after rendering anyway.
+			nodes = nodes[:len(nodes)-1]
 		}
-		// trim the trailing whitespace first, since we don't want to render what
-		// we don't need to and this would be harder after rendering anyway.
-		nodes = nodes[:len(nodes)-1]
 	}
 	var lineBuf outputBuffer
 	for _, n := range nodes {
@@ -275,7 +278,7 @@ func lineToANSI(parts []screenLine, current ... style) (string, style) {
 		previous = s
 	}
 	render := lineBuf.String()
-	if parts[len(parts)-1].newline {
+	if newline {
 		render = render + "\n"
 	}
 	return render, previous
