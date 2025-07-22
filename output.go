@@ -77,10 +77,23 @@ func (b *outputBuffer) appendChar(char rune) {
 	}
 }
 
-// lineToHTML joins parts of a line together and renders them in HTML. It
-// ignores the newline field (i.e. assumes all parts are !newline except the
-// last part). The output string will have a terminating \n.
+type Renderer interface {
+	RenderLine([]screenLine, bool) string
+}
+
+type HTMLRenderer struct{}
+
+func (_ *HTMLRenderer) RenderLine(parts []screenLine, timestamps bool) string {
+	return lineToHTML(parts, timestamps)
+}
+
+// lineToHTML joins parts of a line together and renders them in HTML. If no
+// parts are passed in, it outputs the empty string (with no newline).
 func lineToHTML(parts []screenLine, timestamps bool) string {
+	if len(parts) == 0 {
+		return ""
+	}
+
 	var buf outputBuffer
 
 	// Combine metadata - last metadata wins.
@@ -175,10 +188,12 @@ func lineToHTML(parts []screenLine, timestamps bool) string {
 	closeFrom(0)
 
 	out := strings.TrimRight(buf.String(), " \t")
-	if out == "" {
-		return "&nbsp;\n"
+	if parts[len(parts)-1].newline {
+		if out == "" {
+			return "&nbsp;\n"
+		}
+		out += "\n"
 	}
-	out += "\n"
 	return out
 }
 
