@@ -1,6 +1,8 @@
 package terminal
 
-import "strconv"
+import (
+	"strconv"
+)
 
 type style uint64
 
@@ -25,6 +27,11 @@ const (
 )
 
 const (
+	sbFGColor = 0x0000_0000_00ff_ffff
+	sbBGColor = 0x0000_ffff_ff00_0000
+)
+
+const (
 	sbFGColorX = sbFGColorX1 | sbFGColorX2
 	sbBGColorX = sbBGColorX1 | sbBGColorX2
 )
@@ -36,6 +43,21 @@ const (
 	color24Bit
 )
 
+const (
+	// this is just zero, but include it for completeness
+	sbFGColorNone = style(colorNone) << 48
+
+	sbFGColorSGR = style(colorSGR) << 48
+	sbFGColor8bit = style(color8Bit) << 48
+	sbFGColor24bit = style(color24Bit) << 48
+
+	// this is just zero, but include it for completeness
+	sbBGColorNone = style(colorNone) << 50
+
+	sbBGColorSGR = style(colorSGR) << 50
+	sbBGColor8bit = style(color8Bit) << 50
+	sbBGColor24bit = style(color24Bit) << 50
+)
 
 // Used for comparing styles - ignores the element bit, link bit, and unused bits.
 const styleComparisonMask = 0x03ff_ffff_ffff_ffff
@@ -85,6 +107,114 @@ const (
 	COLOR_GOT_38   = iota
 	COLOR_GOT_48   = iota
 )
+
+func formatUint(v uint64) string {
+	if v == 0 {
+		return ""
+	}
+	return strconv.FormatUint(v, 10)
+}
+
+func (s style) ANSITransform(from style) []string {
+	diff := (s ^ from) & styleComparisonMask
+	if diff == 0 {
+		return nil
+	}
+	if s == 0 {
+		// reset all styles
+		return []string{""}
+	}
+	var styles []string
+	if diff.fgColorType() != 0 || diff.fgColor() != 0 {
+		switch s.fgColorType() {
+		case colorNone:
+			styles = append(styles, "39")
+		case colorSGR:
+			styles = append(styles, formatUint(uint64(s.fgColor())))
+		case color8Bit:
+			styles = append(styles, "38", "5", formatUint(uint64(s.fgColor())))
+		case color24Bit:
+			rgb := s.fgColor()
+			r := uint64(rgb >> 16) & 0xff
+			g := uint64(rgb >> 8) & 0xff
+			b := uint64(rgb) & 0xff 
+			styles = append(
+				styles,
+				"38",
+				"2",
+				formatUint(r),
+				formatUint(g),
+				formatUint(b),
+			)
+		}
+	}
+
+	if diff.bgColorType() != 0 || diff.bgColor() != 0 {
+		switch s.bgColorType() {
+		case colorNone:
+			styles = append(styles, "49")
+		case colorSGR:
+			styles = append(styles, formatUint(uint64(s.bgColor())))
+		case color8Bit:
+			styles = append(styles, "48", "5", formatUint(uint64(s.bgColor())))
+		case color24Bit:
+			rgb := s.bgColor()
+			r := uint64(rgb >> 16) & 0xff
+			g := uint64(rgb >> 8) & 0xff
+			b := uint64(rgb) & 0xff 
+			styles = append(
+				styles,
+				"48",
+				"2",
+				formatUint(r),
+				formatUint(g),
+				formatUint(b),
+			)
+		}
+	}
+
+	if diff.bold() || diff.faint() {
+		if s.bold() {
+			styles = append(styles, "1")
+		}
+		if s.faint() {
+			styles = append(styles, "2")
+		}
+		if !s.bold() && !s.faint() {
+			styles = append(styles, "22")
+		}
+	}
+	if diff.italic() {
+		if s.italic() {
+			styles = append(styles, "3")
+		} else {
+			styles = append(styles, "23")
+		}
+	}
+	if diff.underline() {
+		if s.underline() {
+			styles = append(styles, "4")
+		} else {
+			styles = append(styles, "24")
+		}
+	}
+	if diff.blink() {
+		if s.blink() {
+			styles = append(styles, "5")
+		} else {
+			styles = append(styles, "25")
+		}
+	}
+	if diff.strike() {
+		if s.strike() {
+			styles = append(styles, "9")
+		} else {
+			styles = append(styles, "29")
+		}
+	}
+
+	return styles
+}
 
 // CSS classes that make up the style
 func (s style) asClasses() []string {
