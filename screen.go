@@ -574,22 +574,22 @@ func (s *Screen) AsANSI(current ... style) (string, style) {
 	for _, s := range current {
 		previousStyle |= s
 	}
-	lines := [][]node{{}}
+	lineStart := 0
 	for i, line := range s.screen {
-		lines[len(lines)-1] = append(lines[len(lines)-1], line.nodes...)
-		// Add a new line if there's a newline and this is not the last line
-		if line.newline && i != len(s.screen)-1 {
-			lines = append(lines, []node{})
+		if line.newline {
+			var ansiLine string
+			ansiLine, previousStyle = lineToANSI(s.screen[lineStart:i+1], previousStyle)
+			sb.WriteString(ansiLine)
+			lineStart = i+1
 		}
 	}
-
-	for _, line := range lines {
+	if lineStart < len(s.screen) {
 		var ansiLine string
-		ansiLine, previousStyle = lineToANSI([]screenLine{{nodes: line}}, previousStyle)
+		ansiLine, previousStyle = lineToANSI(s.screen[lineStart:], previousStyle)
 		sb.WriteString(ansiLine)
 	}
 
-	return strings.TrimSuffix(sb.String(), "\n"), previousStyle
+	return sb.String(), previousStyle
 }
 
 func (s *Screen) newLine() {
