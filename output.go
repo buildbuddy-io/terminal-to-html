@@ -215,9 +215,12 @@ func (l *screenLine) asPlain() string {
 }
 
 // lineToPlain joins parts of a line together and renders them as plain text,
-// optionally with a UTC timestamp prefix. The output string will have a
-// terminating \n.
+// optionally with a UTC timestamp prefix.
 func lineToPlain(parts []screenLine, timestamps bool) string {
+	if len(parts) == 0 {
+		return ""
+	}
+
 	var buf strings.Builder
 
 	if timestamps {
@@ -245,9 +248,106 @@ func lineToPlain(parts []screenLine, timestamps bool) string {
 	}
 
 	line := buf.String()
-	line = strings.TrimRight(line, " \t")
-	if line == "" && !timestamps {
-		return "\n"
+	if parts[len(parts)-1].newline {
+		line = strings.TrimRight(line, " \t") + "\n"
 	}
-	return line + "\n"
+	return line
+}
+
+func (b *outputBuffer) appendANSIStyle(styles []string) {
+	if len(styles) > 0 {
+		b.WriteString("\u001b[")
+		b.WriteString(styles[0])
+		for _, code := range styles[1:] {
+			// only write semicolons after we write the first ANSI code
+			b.WriteByte(';')
+			b.WriteString(code)
+		}
+		b.WriteByte('m')
+	}
+}
+
+type ANSIRenderer struct {
+	current style
+}
+
+func (r *ANSIRenderer) RenderLine(parts []screenLine, timestamps bool) string {
+	line, current := lineToANSI(parts, r.current)
+	r.current = current
+	return line
+}
+
+func (r *ANSIRenderer) Style() style {
+	return r.current
+}
+
+func lineToANSI(parts []screenLine, current ...style) (string, style) {
+	previous := style(0)
+	for _, s := range current {
+		previous |= s
+	}
+	if len(parts) == 0 {
+		return "", previous
+	}
+
+	// Presize the slice of nodes to avoid repeated allocations.
+	nodeCount := 0
+	for _, p := range parts {
+		nodeCount += len(p.nodes)
+	}
+	line := make([]node, 0, nodeCount)
+
+	for _, l := range parts {
+		line = append(line, l.nodes...)
+	}
+	nodes := line
+	newline := parts[len(parts)-1].newline
+	if newline {
+		for _, n := range slices.Backward(line) {
+			if n.style.bgColorType() != colorNone || (n.blob != ' ' && n.blob != '\t') {
+				break
+			}
+			// trim the trailing whitespace first, since we don't want to render what
+			// we don't need to and this would be harder after rendering anyway.
+			nodes = nodes[:len(nodes)-1]
+		}
+	}
+	var lineBuf outputBuffer
+	for _, n := range nodes {
+		s := n.style
+		if n.blob == ' ' || n.blob == '\t' {
+			// if this is whitespace, the only style that can have an effect is
+			// background color.
+			s = (previous &^ (sbBGColorX | sbBGColor)) | (s & (sbBGColorX | sbBGColor))
+		}
+		styles := s.ANSITransform(previous)
+		if previous != 0 && len(styles) > 0 {
+			// If there was a style previously, and there is a new style to
+			// apply, see if it's shorter to reset and then apply the new style
+			// rather than transforming from the previous style.
+			fromZero := s.ANSITransform(style(0))
+			// If we are to apply to fromZero styles, we will need to prefix
+			// them with a reset code, so add 1 to the length.
+			if joinedLength(fromZero)+1 < joinedLength(styles) {
+				styles = append([]string{""}, fromZero...)
+			}
+		}
+		lineBuf.appendANSIStyle(styles)
+		lineBuf.WriteRune(n.blob)
+		previous = s
+	}
+	render := lineBuf.String()
+	if newline {
+		render = render + "\n"
+	}
+	return render, previous
+}
+
+// joinedLength is an optimized version of len(strings.Join(parts, ";"))
+func joinedLength(parts []string) int {
+	res := len(parts) - 1 // account for semicolons
+	for _, p := range parts {
+		res += len(p)
+	}
+	return res
 }
