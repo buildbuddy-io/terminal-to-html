@@ -49,9 +49,14 @@ type Screen struct {
 	realWindow bool
 
 	// Optional callback. If not nil, as each line is scrolled out of the top of
-	// the buffer, this func is called with the HTML.
+	// the buffer, this func is called with the rendered line.
 	// The line will always have a `\n` suffix.
-	ScrollOutFunc func(lineHTML string)
+	ScrollOutFunc func(renderedLine string)
+
+	// ScrollOutRenderer is what is used to render any lines being scrolled out
+	// before calling ScrollOutFunc on the rendered lines.
+	// Defaults to HTML.
+	scrollOutRenderer Renderer
 
 	// Processing statistics
 	LinesScrolledOut int // count of lines that scrolled off the top
@@ -63,6 +68,13 @@ type Screen struct {
 
 // ScreenOption is a functional option for creating new screens.
 type ScreenOption = func(*Screen) error
+
+func WithRenderer(renderer Renderer) ScreenOption {
+	return func(s *Screen) error {
+		s.scrollOutRenderer = renderer
+		return nil
+	}
+}
 
 // WithSize sets the initial window size.
 func WithSize(w, h int) ScreenOption {
@@ -105,6 +117,7 @@ func NewScreen(opts ...ScreenOption) (*Screen, error) {
 		parser: parser{
 			mode: parserModeNormal,
 		},
+		scrollOutRenderer: &HTMLRenderer{},
 	}
 	s.parser.screen = s
 	for _, o := range opts {
@@ -263,7 +276,7 @@ func (s *Screen) currentLineForWriting() *screenLine {
 		// larger than maxLines.
 		// Scroll out one line.
 		if s.ScrollOutFunc != nil {
-			s.ScrollOutFunc(lineToHTML(s.screen[:1]))
+			s.ScrollOutFunc(s.scrollOutRenderer.RenderLine(s.screen[:1]))
 		}
 
 		// Remove the scrolled out line and add a new line.
@@ -559,6 +572,31 @@ func (s *Screen) AsPlainText() string {
 
 	// For backwards compatibility the final newline is trimmed.
 	return strings.TrimSuffix(sb.String(), "\n")
+}
+
+func (s *Screen) AsANSI(current ... style) (string, style) {
+	var sb strings.Builder
+
+	previousStyle := style(0)
+	for _, s := range current {
+		previousStyle |= s
+	}
+	lineStart := 0
+	for i, line := range s.screen {
+		if line.newline {
+			var ansiLine string
+			ansiLine, previousStyle = lineToANSI(s.screen[lineStart:i+1], previousStyle)
+			sb.WriteString(ansiLine)
+			lineStart = i+1
+		}
+	}
+	if lineStart < len(s.screen) {
+		var ansiLine string
+		ansiLine, previousStyle = lineToANSI(s.screen[lineStart:], previousStyle)
+		sb.WriteString(ansiLine)
+	}
+
+	return sb.String(), previousStyle
 }
 
 func (s *Screen) newLine() {
