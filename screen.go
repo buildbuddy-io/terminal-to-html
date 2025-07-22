@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -240,9 +241,20 @@ func (s *Screen) currentLineForWriting() *screenLine {
 		s.currentLine().newline = false
 		s.x = 0
 		s.y++
+	} else if len(s.screen) > 0 && s.currentLine() == nil {
+		// Since we will be adding new lines and we are not continuing from the
+		// previous line, ensure the last line ends in a newline.
+		s.screen[len(s.screen)-1].newline = true
 	}
+	// This is a pointer to the most recent line we added during this method.
+	var addedLine *screenLine
 	// Ensure there are enough lines on screen to start writing here.
 	for s.currentLine() == nil {
+		if addedLine != nil {
+			// we are adding a line below the line we just added, so that line needs a
+			// newline.
+			addedLine.newline = true
+		}
 		// If maxLines is not in use, or adding a new line would not make it
 		// larger than maxLines, then just allocate a new line.
 		if s.maxLines <= 0 || len(s.screen)+1 <= s.maxLines {
@@ -257,11 +269,11 @@ func (s *Screen) currentLineForWriting() *screenLine {
 				// No slices available for recycling, make a new one.
 				nodes = make([]node, 0, s.cols)
 			}
-			newLine := screenLine{
-				nodes:   nodes,
-				newline: true,
+			s.screen = slices.Grow(s.screen, 1)[:len(s.screen)+1]
+			addedLine = &s.screen[len(s.screen)-1]
+			*addedLine = screenLine{
+				nodes: nodes,
 			}
-			s.screen = append(s.screen, newLine)
 			if s.y >= s.lines {
 				// Because the "window" is always the last s.lines of s.screen
 				// (or all of them, if there are fewer lines than s.lines)
@@ -274,52 +286,20 @@ func (s *Screen) currentLineForWriting() *screenLine {
 
 		// maxLines is in effect, and adding a new line would make the screen
 		// larger than maxLines.
-		// Pass the whole line being scrolled out to ScrollOutFunc if available,
-		// otherwise just scroll out 1 line to nowhere.
-		scrollOutTo := 1
+		// Scroll out one line.
 		if s.ScrollOutFunc != nil {
-			// Whole lines need to be passed to the callback. Find the end of
-			// the line (the screen line with newline = true).
-			// The majority of the time this will just be the first screen line.
-			// If it's all one enormous line, stop at the top of the screen.
-			// (so, allow scrollout to eat all of the "scrollback" but none of
-			// the "visible screen". We're talking a line that's 160*200
-			// chars long for the top of the screen to be reached that way.)
-			scrollOutTo = s.top()
-			if s.top() == 0 {
-				// We still need to scroll out a line, even if there are no lines above
-				// the top of the window. Get the next line.
-				scrollOutTo = len(s.screen)
-			}
-			for i, l := range s.screen[:scrollOutTo] {
-				if l.newline {
-					scrollOutTo = i + 1
-					break
-				}
-			}
-			s.ScrollOutFunc(s.scrollOutRenderer.RenderLine(s.screen[:scrollOutTo]))
+			s.ScrollOutFunc(s.scrollOutRenderer.RenderLine(s.screen[:1]))
 		}
-		for i := range scrollOutTo {
-			s.nodeRecycling = append(s.nodeRecycling, s.screen[i].nodes[:0])
-		}
-		s.LinesScrolledOut += scrollOutTo
 
-		var nodes []node
-		if r1 := len(s.nodeRecycling) - 1; r1 >= 0 {
-			// Make a new line on the bottom using a recycled node slice. There's
-			// usually at least one we just added.
-			nodes = s.nodeRecycling[r1]
-			s.nodeRecycling = s.nodeRecycling[:r1]
-		} else {
-			// No nodes to recycle, make a new node slice. This happens when we scroll
-			// out a line that consisted of no screenlines.
-			nodes = make([]node, 0)
+		recycledNodes := s.screen[0].nodes[:0]
+		s.screen = s.screen[1:]
+		s.LinesScrolledOut++
+
+		s.screen = slices.Grow(s.screen, 1)[:len(s.screen)+1]
+		addedLine = &s.screen[len(s.screen)-1]
+		*addedLine = screenLine{
+			nodes: recycledNodes,
 		}
-		newLine := screenLine{
-			nodes:   nodes,
-			newline: true,
-		}
-		s.screen = append(s.screen[scrollOutTo:], newLine)
 
 		// Since the buffer added 1 line, s.y moves upwards.
 		s.y--
@@ -533,6 +513,10 @@ func (s *Screen) applyEscape(code rune, instructions []string) {
 				s.screen[i].clearAll()
 			}
 		}
+		if len(s.screen) > 0 {
+			// The final line should not have a newline.
+			s.screen[len(s.screen)-1].newline = false
+		}
 
 	case 'K': // Erase in Line: erases part of the line.
 		switch inst(0) {
@@ -544,6 +528,10 @@ func (s *Screen) applyEscape(code rune, instructions []string) {
 
 		case "2":
 			s.currentLine().clearAll()
+			if len(s.screen) > 0 {
+				// The final line should not have a newline.
+				s.screen[len(s.screen)-1].newline = false
+			}
 		}
 
 	case 'M':
@@ -575,8 +563,14 @@ func (s *Screen) AsHTML() string {
 		screen = screen[lineEnd:]
 	}
 
-	// For backwards compatibility the final newline is trimmed.
-	return strings.TrimSuffix(sb.String(), "\n")
+	// For backwards compatibility the final newline is trimmed. If the final line
+	// consists of only a non-breaking space, trim that, too.
+	render := sb.String()
+	var ok bool
+	if render, ok = strings.CutSuffix(render, "\n"); ok {
+	  render = strings.TrimSuffix(render, "&nbsp;")
+	}
+	return render
 }
 
 // AsPlainText renders the screen without any ANSI style etc.
@@ -620,13 +614,16 @@ func (s *Screen) newLine() {
 	// give us the next line if the cursor was placed past the end of the line.
 	s.x = 0
 
-	// Ensure the previous line, if it already exists, gets a \n in the render.
-	// This could happen if we got CSI A (cursor up), and then \n onto a line
-	// that had previously been wrapped from the previous line.
-	if line := s.currentLine(); line != nil {
-		line.newline = true
-	}
+	// Ensure the current line gets a \n in the render.
+	// This could be necessary if the cursor was moved to a line that wraps to the
+	// next line.
+	s.currentLineForWriting().newline = true
 	s.y++
+	// newlines are real characters being printed, not just moving the cursor.
+	// Getting the current line will force the Screen to add any missing lines
+	// to the slice of screenlines, which ensures that they get rendered and 
+	// scrolls out any content that should be.
+	_ = s.currentLineForWriting()
 }
 
 func (s *Screen) revNewLine() {
