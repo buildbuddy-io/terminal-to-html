@@ -44,6 +44,10 @@ type Screen struct {
 	// It defaults to 160 columns * 100 lines.
 	cols, lines int
 
+	// Whether the emulated window should be treated as the real window or not.
+	// If set to true, supports absolute vertical cursor position.
+	realWindow bool
+
 	// Optional callback. If not nil, as each line is scrolled out of the top of
 	// the buffer, this func is called with the HTML.
 	// The line will always have a `\n` suffix.
@@ -76,6 +80,16 @@ func WithMaxSize(maxCols, maxLines int) ScreenOption {
 		if maxLines > 0 {
 			s.lines = min(s.lines, maxLines)
 		}
+		return nil
+	}
+}
+
+// WithRealWindow tells the screen to treat the emulated window as though it is
+// the real window, which means supporting things like absolute vertical cursor
+// position.
+func WithRealWindow() ScreenOption {
+	return func(s *Screen) error {
+		s.realWindow = true
 		return nil
 	}
 }
@@ -388,6 +402,15 @@ func (s *Screen) applyEscape(code rune, instructions []string) {
 		s.x = min(s.x, s.cols-1)
 
 	case 'H': // Cursor Position Absolute: Go to row n and column m (default 1;1).
+		if s.realWindow {
+			s.y = ansiInt(inst(0)) - 1
+			s.y = max(s.y, 0)
+			s.y = min(s.y, s.lines -1)
+			s.x = ansiInt(inst(1)) - 1
+			s.x = max(s.x, 0)
+			s.x = min(s.x, s.cols-1)
+			break
+		}
 		//
 		// There are a variety of agent versions still in use, which have
 		// different PTY window settings. Although we emulate a window size
