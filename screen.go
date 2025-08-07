@@ -114,10 +114,7 @@ func WithRealWindow() ScreenOption {
 }
 
 func WithDefaultColumnCapacity(colsCap int) ScreenOption {
-	return func(s *Screen) error {
-		s.colsCap = colsCap
-		return nil
-	}
+	return func(s *Screen) error { return s.SetDefaultColumnCapacity(colsCap) }
 }
 
 // NewScreen creates a new screen with various options.
@@ -156,6 +153,15 @@ func (s *Screen) SetSize(cols, lines int) error {
 		return fmt.Errorf("lines greater than max [%d > %d]", lines, s.maxLines)
 	}
 	s.cols, s.lines = cols, lines
+	return nil
+}
+
+// SetDefaultColumnCapacity changes the default capacity for screen lines.
+func (s *Screen) SetDefaultColumnCapacity(colsCap int) error {
+	if colsCap < 0 {
+		return fmt.Errorf("negative column capacity %d", colsCap)
+	}
+	s.colsCap = colsCap
 	return nil
 }
 
