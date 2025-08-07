@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -1124,6 +1125,59 @@ var WindowHeight2TestCases = []struct{
 				newline: false,
 				nodes: make([]node, 0),
 			},
+		},
+	},
+	{
+		name: "Test default capacity functionality",
+		input: []string{
+			"1234567890\n",
+			"\x1b[Aabc",
+		},
+		wantScrollOut: "",
+		wantWindow: []screenLine {
+			{
+				newline: true,
+				nodes: []node{
+					{
+						blob: 'a',
+					},
+					{
+						blob: 'b',
+					},
+					{
+						blob: 'c',
+					},
+					{
+						blob: '4',
+					},
+					{
+						blob: '5',
+					},
+					{
+						blob: '6',
+					},
+					{
+						blob: '7',
+					},
+					{
+						blob: '8',
+					},
+					{
+						blob: '9',
+					},
+					{
+						blob: '0',
+					},
+				},
+			},
+			{
+				newline: false,
+				nodes: make([]node, 0),
+			},
+		},
+		opts: []ScreenOption{
+			WithSize(math.MaxInt, 2),
+			WithDefaultColumnCapacity(5),
 		},
 	},
 }

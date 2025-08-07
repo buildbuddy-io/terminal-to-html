@@ -44,6 +44,13 @@ type Screen struct {
 	// It defaults to 160 columns * 100 lines.
 	cols, lines int
 
+	// If less than the value for cols, specifies the default column capacity for
+	// lines. This allows for very long lines without always allocating the memory
+	// to support them when it isn't needed.
+	// Defaults to the maximum integer value, meaning that if it is not explicitly
+	// set, the column capacity will just be cols.
+	colsCap int
+
 	// Whether the emulated window should be treated as the real window or not.
 	// If set to true, supports absolute vertical cursor position.
 	realWindow bool
@@ -106,6 +113,10 @@ func WithRealWindow() ScreenOption {
 	}
 }
 
+func WithDefaultColumnCapacity(colsCap int) ScreenOption {
+	return func(s *Screen) error { return s.SetDefaultColumnCapacity(colsCap) }
+}
+
 // NewScreen creates a new screen with various options.
 func NewScreen(opts ...ScreenOption) (*Screen, error) {
 	s := &Screen{
@@ -114,6 +125,7 @@ func NewScreen(opts ...ScreenOption) (*Screen, error) {
 		// 160x100 also matches the buildkite-agent PTY size.
 		cols:  160,
 		lines: 100,
+		colsCap: math.MaxInt,
 		parser: parser{
 			mode: parserModeNormal,
 		},
@@ -141,6 +153,15 @@ func (s *Screen) SetSize(cols, lines int) error {
 		return fmt.Errorf("lines greater than max [%d > %d]", lines, s.maxLines)
 	}
 	s.cols, s.lines = cols, lines
+	return nil
+}
+
+// SetDefaultColumnCapacity changes the default capacity for screen lines.
+func (s *Screen) SetDefaultColumnCapacity(colsCap int) error {
+	if colsCap < 0 {
+		return fmt.Errorf("negative column capacity %d", colsCap)
+	}
+	s.colsCap = colsCap
 	return nil
 }
 
@@ -260,7 +281,7 @@ func (s *Screen) currentLineForWriting() *screenLine {
 		// If maxLines is not in use, or adding a new line would not make it
 		// larger than maxLines, then just allocate a new line.
 		if s.maxLines <= 0 || len(s.screen)+1 <= s.maxLines {
-			s.screen = append(s.screen, screenLine{nodes: make([]node, 0, s.cols)})
+			s.screen = append(s.screen, screenLine{nodes: make([]node, 0, min(s.cols, s.colsCap))})
 			addedLine = &s.screen[len(s.screen)-1]
 			if s.y >= s.lines {
 				// Because the "window" is always the last s.lines of s.screen
@@ -284,7 +305,7 @@ func (s *Screen) currentLineForWriting() *screenLine {
 			s.screen,
 			screenLine{
 				// recycle the nodes from the line we are removing
-				nodes: s.screen[0].nodes[:0:s.cols],
+				nodes: s.screen[0].nodes[:0:min(s.cols, s.colsCap)],
 			},
 		)[1:]
 
