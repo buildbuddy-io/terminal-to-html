@@ -81,7 +81,7 @@ type Renderer interface {
 	RenderLine([]screenLine) string
 }
 
-type HTMLRenderer struct {}
+type HTMLRenderer struct{}
 
 func (_ *HTMLRenderer) RenderLine(parts []screenLine) string {
 	return lineToHTML(parts)
@@ -215,14 +215,14 @@ func (l *screenLine) asPlain() string {
 
 func (b *outputBuffer) appendANSIStyle(styles []string) {
 	if len(styles) > 0 {
-		b.Write([]byte("\u001b["))
-		b.Write([]byte(styles[0]))
+		b.WriteString("\u001b[")
+		b.WriteString(styles[0])
 		for _, code := range styles[1:] {
 			// only write semicolons after we write the first ANSI code
-			b.Write([]byte(";"))
-			b.Write([]byte(code))
+			b.WriteByte(';')
+			b.WriteString(code)
 		}
-		b.Write([]byte("m"))
+		b.WriteByte('m')
 	}
 }
 
@@ -240,7 +240,7 @@ func (r *ANSIRenderer) Style() style {
 	return r.current
 }
 
-func lineToANSI(parts []screenLine, current ... style) (string, style) {
+func lineToANSI(parts []screenLine, current ...style) (string, style) {
 	previous := style(0)
 	for _, s := range current {
 		previous |= s
@@ -248,7 +248,14 @@ func lineToANSI(parts []screenLine, current ... style) (string, style) {
 	if len(parts) == 0 {
 		return "", previous
 	}
-	line := []node{}
+
+	// Presize the slice of nodes to avoid repeated allocations.
+	nodeCount := 0
+	for _, p := range parts {
+		nodeCount += len(p.nodes)
+	}
+	line := make([]node, 0, nodeCount)
+
 	for _, l := range parts {
 		line = append(line, l.nodes...)
 	}
@@ -273,9 +280,9 @@ func lineToANSI(parts []screenLine, current ... style) (string, style) {
 			s = (previous &^ (sbBGColorX | sbBGColor)) | (s & (sbBGColorX | sbBGColor))
 		}
 		styles := s.ANSITransform(previous)
-		fromZero := append([]string{""}, s.ANSITransform(style(0))...)
-		if len(strings.Join(fromZero, ";")) < len(strings.Join(styles, ";")) {
-			styles = fromZero
+		fromZero := s.ANSITransform(style(0))
+		if joinedLength(fromZero)+1 < joinedLength(styles) {
+			styles = append([]string{""}, fromZero...)
 		}
 		lineBuf.appendANSIStyle(styles)
 		lineBuf.WriteRune(n.blob)
@@ -286,4 +293,13 @@ func lineToANSI(parts []screenLine, current ... style) (string, style) {
 		render = render + "\n"
 	}
 	return render, previous
+}
+
+// joinedLength is an optimized version of len(strings.Join(parts, ";"))
+func joinedLength(parts []string) int {
+	res := len(parts) - 1 // account for semicolons
+	for _, p := range parts {
+		res += len(p)
+	}
+	return res
 }
