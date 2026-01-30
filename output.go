@@ -282,6 +282,8 @@ func lineToANSI(parts []screenLine, current ...style) (string, style) {
 		styles := s.ANSITransform(previous)
 		fromZero := s.ANSITransform(style(0))
 		if joinedLength(fromZero)+1 < joinedLength(styles) {
+			// It's shorter to reset and then set the styles we want rather than
+			// transforming from the previous style.
 			styles = append([]string{""}, fromZero...)
 		}
 		lineBuf.appendANSIStyle(styles)
