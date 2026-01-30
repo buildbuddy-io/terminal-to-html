@@ -280,11 +280,14 @@ func lineToANSI(parts []screenLine, current ...style) (string, style) {
 			s = (previous &^ (sbBGColorX | sbBGColor)) | (s & (sbBGColorX | sbBGColor))
 		}
 		styles := s.ANSITransform(previous)
-		fromZero := s.ANSITransform(style(0))
-		if joinedLength(fromZero)+1 < joinedLength(styles) {
-			// It's shorter to reset and then set the styles we want rather than
-			// transforming from the previous style.
-			styles = append([]string{""}, fromZero...)
+		if previous != 0 && len(styles) > 0 {
+			// If there was a style previously, and there is a new style to
+			// apply, see if it's shorter to reset and then apply the new style
+			// rather than transforming from the previous style.
+			fromZero := s.ANSITransform(style(0))
+			if joinedLength(fromZero)+1 < joinedLength(styles) {
+				styles = append([]string{""}, fromZero...)
+			}
 		}
 		lineBuf.appendANSIStyle(styles)
 		lineBuf.WriteRune(n.blob)
