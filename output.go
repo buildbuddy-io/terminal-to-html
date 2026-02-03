@@ -285,6 +285,8 @@ func lineToANSI(parts []screenLine, current ...style) (string, style) {
 			// apply, see if it's shorter to reset and then apply the new style
 			// rather than transforming from the previous style.
 			fromZero := s.ANSITransform(style(0))
+			// If we are to apply to fromZero styles, we will need to prefix
+			// them with a reset code, so add 1 to the length.
 			if joinedLength(fromZero)+1 < joinedLength(styles) {
 				styles = append([]string{""}, fromZero...)
 			}
