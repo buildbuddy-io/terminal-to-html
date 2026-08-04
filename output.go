@@ -2,7 +2,6 @@ package terminal
 
 import (
 	"html"
-	"html/template"
 	"maps"
 	"slices"
 	"strconv"
@@ -10,22 +9,16 @@ import (
 	"time"
 )
 
-var (
-	timeTagImpl = template.Must(template.New("time").Parse(
-		`<time datetime="{{.}}">{{.}}</time>`,
-	))
-
-	openSpanTagTmpl = template.Must(template.New("span").Parse(
-		`<span class="{{.}}">`,
-	))
-)
-
 type outputBuffer struct {
 	strings.Builder
 }
 
 func (b *outputBuffer) appendNodeStyle(n node) {
-	openSpanTagTmpl.Execute(b, strings.Join(n.style.asClasses(), " "))
+	// asClasses only ever emits "term-" + prefix + strconv.Itoa(int), so
+	// the joined value is always [a-z0-9- ] — nothing to escape.
+	b.WriteString(`<span class="`)
+	b.WriteString(strings.Join(n.style.asClasses(), " "))
+	b.WriteString(`">`)
 }
 
 func (b *outputBuffer) closeStyle() {
@@ -54,7 +47,12 @@ func (b *outputBuffer) appendMeta(namespace string, data map[string]string) {
 	time := time.Unix(millis/1000, (millis%1000)*1_000_000).UTC()
 	// One of the formats accepted by the <time> tag:
 	datetime := time.Format("2006-01-02T15:04:05.999Z")
-	timeTagImpl.Execute(b, datetime)
+	// A formatted timestamp is always [0-9-T:.Z] — nothing to escape.
+	b.WriteString(`<time datetime="`)
+	b.WriteString(datetime)
+	b.WriteString(`">`)
+	b.WriteString(datetime)
+	b.WriteString(`</time>`)
 }
 
 // Append a character to our outputbuffer, escaping HTML bits as necessary.
